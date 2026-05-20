@@ -1,0 +1,386 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int            @id @default(autoincrement())
+  username  String         @unique @db.VarChar(50)
+  password  String         @db.VarChar(255)
+  nickname  String         @db.VarChar(50)
+  role      String         @default("sales") @db.VarChar(20)
+  email     String?        @db.VarChar(100)
+  phone     String?        @db.VarChar(20)
+  deptId    Int?
+  status    String         @default("active") @db.VarChar(20)
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+  logs      OperationLog[]
+  dept      Dept?          @relation(fields: [deptId], references: [id])
+
+  @@index([deptId], map: "users_deptId_fkey")
+  @@map("users")
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(50)
+  code        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(255)
+  permissions Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("roles")
+}
+
+model Dept {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  parentId  Int?
+  sort      Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  parent    Dept?    @relation("DeptTree", fields: [parentId], references: [id])
+  children  Dept[]   @relation("DeptTree")
+  users     User[]
+
+  @@index([parentId], map: "depts_parentId_fkey")
+  @@map("depts")
+}
+
+model ReconciliationUnit {
+  id            Int        @id @default(autoincrement())
+  companyName   String     @map("company_name") @db.VarChar(200)
+  projectName   String     @map("project_name") @db.VarChar(200)
+  taxNumber     String?    @map("tax_number") @db.VarChar(50)
+  address       String?    @db.VarChar(255)
+  phone         String?    @db.VarChar(20)
+  contact       String?    @db.VarChar(50)
+  bankName      String?    @map("bank_name") @db.VarChar(100)
+  bankAccount   String?    @map("bank_account") @db.VarChar(50)
+  bankCode      String?    @map("bank_code") @db.VarChar(30)
+  status        String     @default("active") @db.VarChar(20)
+  remark        String?    @db.Text
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  customers     Customer[]
+
+  @@map("reconciliation_units")
+}
+
+model Customer {
+  id                   Int                 @id @default(autoincrement())
+  name                 String              @db.VarChar(200)
+  type                 String              @db.VarChar(20)
+  category             String?             @db.VarChar(100)
+  contact              String?             @db.VarChar(50)
+  phone                String?             @db.VarChar(20)
+  address              String?             @db.VarChar(255)
+  bank                 String?             @db.VarChar(100)
+  account              String?             @db.VarChar(50)
+  status               String              @default("active") @db.VarChar(20)
+  remark               String?             @db.Text
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  reconciliationUnitId Int?                @map("reconciliation_unit_id")
+  contracts            Contract[]
+  reconciliationUnit   ReconciliationUnit? @relation(fields: [reconciliationUnitId], references: [id])
+  supplierDeliveryOrders DeliveryOrder[]   @relation("DeliverySupplier")
+  customerDeliveryOrders DeliveryOrder[]   @relation("DeliveryCustomer")
+  inputInvoices        Invoice[]           @relation("InputInvoices")
+  outputInvoices       Invoice[]           @relation("OutputInvoices")
+  payments             Payment[]
+  statements           Statement[]
+  stockBuyerRecords    StockRecord[]       @relation("StockBuyer")
+  stockSellerRecords   StockRecord[]       @relation("StockSeller")
+
+  @@index([reconciliationUnitId], map: "customers_reconciliation_unit_id_fkey")
+  @@map("customers")
+}
+
+model Product {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(100)
+  unit        String    @db.VarChar(20)
+  model       String?   @db.VarChar(100)
+  spec        String?   @db.VarChar(100)
+  price       Decimal?  @db.Decimal(15, 2)
+  pricingType String    @default("fixed_price") @db.VarChar(20) @map("pricing_type")
+  status      String    @default("active") @db.VarChar(20)
+  remark      String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  contractItems    ContractItem[]
+  priceHistory     ProductPriceHistory[]
+  mortarOrderItems DeliveryOrderMortar[]
+  blockOrderItems  DeliveryOrderBlock[]
+  stockRecords     StockRecord[]
+
+  @@map("products")
+}
+
+model ProductPriceHistory {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  price       Decimal  @db.Decimal(15, 2)
+  effectiveDate DateTime @map("effective_date")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId], map: "product_price_history_productId_fkey")
+  @@index([productId, effectiveDate], map: "product_price_history_product_effective")
+  @@map("product_price_history")
+}
+
+model Contract {
+  id             Int             @id @default(autoincrement())
+  no             String          @unique @db.VarChar(50)
+  name           String          @db.VarChar(200)
+  customerId     Int
+  type           String          @db.VarChar(20)
+  amount         Decimal         @db.Decimal(15, 2)
+  signedDate     DateTime        @map("signed_date")
+  startDate      DateTime        @map("start_date")
+  endDate        DateTime        @map("end_date")
+  status         String          @default("draft") @db.VarChar(20)
+  files          Json?
+  unitName       String?         @map("unit_name") @db.VarChar(200)
+  unitAddress    String?         @map("unit_address") @db.VarChar(255)
+  bank           String?         @db.VarChar(100)
+  account        String?         @map("account") @db.VarChar(50)
+  phone          String?         @db.VarChar(20)
+  projectAddress String?         @map("project_address") @db.VarChar(255)
+  remark         String?         @db.Text
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  customer       Customer        @relation(fields: [customerId], references: [id])
+  deliveryOrders DeliveryOrder[]
+  items          ContractItem[]
+
+  @@index([customerId], map: "contracts_customerId_fkey")
+  @@map("contracts")
+}
+
+model ContractItem {
+  id              Int      @id @default(autoincrement())
+  contractId      Int
+  productId       Int?
+  productName     String   @map("product_name") @db.VarChar(100)
+  unit            String   @db.VarChar(20)
+  model           String?  @db.VarChar(100)
+  spec            String?  @db.VarChar(100)
+  basePrice       Decimal  @db.Decimal(15, 2) @map("base_price")
+  adjustmentType  String   @db.VarChar(20) @map("adjustment_type")
+  adjustmentValue Decimal  @db.Decimal(15, 4) @map("adjustment_value")
+  price           Decimal  @db.Decimal(15, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id])
+
+  @@index([contractId], map: "contract_items_contractId_fkey")
+  @@index([productId], map: "contract_items_productId_fkey")
+  @@map("contract_items")
+}
+
+model DeliveryOrder {
+  id           Int            @id @default(autoincrement())
+  no           String         @unique @db.VarChar(50)
+  contractId   Int?
+  supplierId   Int
+  customerId   Int
+  productType  String         @db.VarChar(20)
+  deliveryDate DateTime       @map("delivery_date")
+  totalAmount  Decimal        @db.Decimal(15, 2)
+  status       String         @default("pending") @db.VarChar(20)
+  receiptUrl   String?        @map("receipt_url") @db.VarChar(255)
+  remark       String?        @db.Text
+  deletedAt    DateTime?      @map("deleted_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  contract     Contract?      @relation(fields: [contractId], references: [id])
+  supplier     Customer       @relation("DeliverySupplier", fields: [supplierId], references: [id])
+  customer     Customer       @relation("DeliveryCustomer", fields: [customerId], references: [id])
+  mortarItems  DeliveryOrderMortar[]
+  blockItems   DeliveryOrderBlock[]
+
+  @@index([contractId], map: "delivery_orders_contractId_fkey")
+  @@index([supplierId], map: "delivery_orders_supplierId_fkey")
+  @@index([customerId], map: "delivery_orders_customerId_fkey")
+  @@map("delivery_orders")
+}
+
+model DeliveryOrderMortar {
+  id              Int           @id @default(autoincrement())
+  deliveryOrderId Int           @map("delivery_order_id")
+  productId       Int?          @map("product_id")
+  quantity        Decimal       @db.Decimal(15, 4)
+  price           Decimal       @db.Decimal(15, 4)
+  amount          Decimal       @db.Decimal(15, 2)
+  mortarGrade     String        @map("mortar_grade") @db.VarChar(50)
+  packingType     String        @map("packing_type") @db.VarChar(20)
+  licensePlate    String        @map("license_plate") @db.VarChar(20)
+  deliveryOrder   DeliveryOrder @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
+  product         Product?      @relation(fields: [productId], references: [id])
+
+  @@index([deliveryOrderId], map: "delivery_order_mortar_delivery_order_id_fkey")
+  @@index([productId], map: "delivery_order_mortar_product_id_fkey")
+  @@map("delivery_order_mortar")
+}
+
+model DeliveryOrderBlock {
+  id              Int           @id @default(autoincrement())
+  deliveryOrderId Int           @map("delivery_order_id")
+  productId       Int?          @map("product_id")
+  quantity        Decimal       @db.Decimal(15, 4)
+  convertedCubic  Decimal       @db.Decimal(15, 4) @map("converted_cubic")
+  price           Decimal       @db.Decimal(15, 4)
+  amount          Decimal       @db.Decimal(15, 2)
+  frameTaken      Int           @map("frame_taken")
+  frameReturned   Int           @map("frame_returned")
+  remarks         String?       @db.Text
+  deliveryOrder   DeliveryOrder @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
+  product         Product?      @relation(fields: [productId], references: [id])
+
+  @@index([deliveryOrderId], map: "delivery_order_block_delivery_order_id_fkey")
+  @@index([productId], map: "delivery_order_block_product_id_fkey")
+  @@map("delivery_order_block")
+}
+
+model Statement {
+  id              Int      @id @default(autoincrement())
+  no              String   @unique @db.VarChar(50)
+  type            String   @db.VarChar(20)
+  customerId      Int
+  period          String   @db.VarChar(7)
+  totalAmount     Decimal  @db.Decimal(15, 2)
+  confirmedAmount Decimal  @default(0.00) @map("confirmed_amount") @db.Decimal(15, 2)
+  status          String   @default("draft") @db.VarChar(20)
+  items           Json?
+  remark          String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  customer        Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId], map: "statements_customerId_fkey")
+  @@map("statements")
+}
+
+model Invoice {
+  id             Int      @id @default(autoincrement())
+  no             String   @unique @db.VarChar(50)
+  type           String   @db.VarChar(20)
+  customerId     Int
+  outputCustomerId Int?    @map("output_customer_id")
+  invoiceDate    DateTime @map("invoice_date")
+  amount         Decimal  @db.Decimal(15, 2)
+  taxAmount      Decimal  @db.Decimal(15, 2)
+  totalAmount    Decimal  @map("total_amount") @db.Decimal(15, 2)
+  status         String   @default("pending") @db.VarChar(20)
+  verifyStatus   String   @default("unverified") @map("verify_status") @db.VarChar(20)
+  cancelStatus   String   @default("uncancelled") @map("cancel_status") @db.VarChar(20)
+  cancelReason   String?  @map("cancel_reason") @db.VarChar(255)
+  remark         String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  inputCustomer  Customer @relation("InputInvoices", fields: [customerId], references: [id], map: "invoices_input_customerId_fkey")
+  outputCustomer Customer? @relation("OutputInvoices", fields: [outputCustomerId], references: [id])
+
+  @@index([customerId], map: "invoices_input_customerId_fkey")
+  @@index([outputCustomerId], map: "invoices_output_customerId_idx")
+  @@map("invoices")
+}
+
+model Payment {
+  id          Int      @id @default(autoincrement())
+  no          String   @unique @db.VarChar(50)
+  type        String   @db.VarChar(20)
+  customerId  Int
+  bank        String?  @db.VarChar(100)
+  account     String?  @db.VarChar(50)
+  amount      Decimal  @db.Decimal(15, 2)
+  paymentDate DateTime @map("payment_date")
+  voucherUrl  String?  @map("voucher_url") @db.VarChar(255)
+  status      String   @default("pending") @db.VarChar(20)
+  remark      String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId], map: "payments_customerId_fkey")
+  @@map("payments")
+}
+
+model Reconciliation {
+  id            Int      @id @default(autoincrement())
+  no            String   @unique @db.VarChar(50)
+  type          String   @db.VarChar(20)
+  customerId    Int
+  statementId   Int      @map("statement_id")
+  invoiceId     Int?     @map("invoice_id")
+  paymentId     Int?     @map("payment_id")
+  amount        Decimal  @db.Decimal(15, 2)
+  reconcileDate DateTime @map("reconcile_date")
+  status        String   @default("confirmed") @db.VarChar(20)
+  remark        String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("reconciliations")
+}
+
+model OperationLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  action    String   @db.VarChar(50)
+  module    String   @db.VarChar(50)
+  detail    String?  @db.Text
+  ip        String?  @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId], map: "operation_logs_userId_fkey")
+  @@map("operation_logs")
+}
+
+// 库存记录表
+model StockRecord {
+  id          Int       @id @default(autoincrement())
+  no          String    @unique @db.VarChar(50)
+  date        DateTime
+  month       String    @db.VarChar(20)
+  type        String    @db.VarChar(20)
+  buyerId     Int       @map("buyer_id")
+  sellerId    Int       @map("seller_id")
+  productId   Int?      @map("product_id")
+  model       String?   @db.VarChar(100)
+  unit        String    @db.VarChar(20)
+  quantity    Decimal   @db.Decimal(15, 4)
+  amount      Decimal   @db.Decimal(15, 2)
+  unitPrice   Decimal   @db.Decimal(15, 4) @map("unit_price")
+  taxRate     Decimal   @default(0) @db.Decimal(5, 2) @map("tax_rate")
+  taxAmount   Decimal   @default(0) @db.Decimal(15, 2) @map("tax_amount")
+  totalAmount Decimal   @db.Decimal(15, 2) @map("total_amount")
+  status      String    @default("pending") @db.VarChar(20)
+  remark      String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  buyer       Customer  @relation("StockBuyer", fields: [buyerId], references: [id])
+  seller      Customer  @relation("StockSeller", fields: [sellerId], references: [id])
+  product     Product?  @relation(fields: [productId], references: [id])
+
+  @@index([buyerId], map: "stock_records_buyer_id_fkey")
+  @@index([sellerId], map: "stock_records_seller_id_fkey")
+  @@index([productId], map: "stock_records_product_id_fkey")
+  @@index([month], map: "stock_records_month_idx")
+  @@index([type], map: "stock_records_type_idx")
+  @@map("stock_records")
+}
