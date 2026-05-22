@@ -9,6 +9,9 @@
           class="search-input"
           @keyup.enter="handleQuery"
         />
+        <el-select v-model="queryForm.productName" placeholder="选择产品" clearable class="search-select" @change="handleQuery">
+          <el-option v-for="item in productNameOptions" :key="item" :label="item" :value="item" />
+        </el-select>
         <el-button type="primary" class="search-btn" @click="handleQuery">
           <el-icon><Search /></el-icon> 查询
         </el-button>
@@ -376,9 +379,10 @@ const formatDate = (date: any) => {
   return `${year}-${month}-${day}`
 }
 
-const queryForm = reactive({ no: '', productType: '', status: '' })
+const queryForm = reactive({ no: '', productType: '', status: '', productName: '' })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const formRef = ref()
+const productNameOptions = ref<string[]>([])
 
 const defaultMortarItem: DeliveryOrderMortarItem = {
   productId: undefined, quantity: 0, price: 0, amount: 0,
@@ -592,6 +596,15 @@ const loadProducts = async () => {
   } catch {
     mortarProducts.value = []
     blockProducts.value = []
+  }
+}
+
+const loadProductNames = async () => {
+  try {
+    const res = await deliveryApi.getProductNames()
+    productNameOptions.value = res.data || []
+  } catch {
+    productNameOptions.value = []
   }
 }
 
@@ -906,6 +919,7 @@ onMounted(() => {
   loadCustomers()
   loadContracts()
   loadProducts()
+  loadProductNames()
 })
 
 const handleExport = () => {

@@ -7,6 +7,11 @@ import { DeliveryService } from './delivery.service';
 export class DeliveryController {
   constructor(private deliveryService: DeliveryService) {}
 
+  @Get('product-names')
+  async getProductNames() {
+    return this.deliveryService.getProductNames();
+  }
+
   @Get('deleted')
   async getDeleted(@Query() query: any) {
     return this.deliveryService.getDeleted(query);

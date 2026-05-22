@@ -53,6 +53,8 @@ export const deliveryApi = {
     request.get<any, ApiResponse<PageResult<DeliveryOrder>>>('/deliveries/deleted', { params }),
   restore: (id: number) =>
     request.post<any, ApiResponse>(`/deliveries/restore/${id}`),
+  getProductNames: () =>
+    request.get<any, ApiResponse<string[]>>('/deliveries/product-names'),
   getSupplierReconciliation: (params: any) =>
     request.get<any, ApiResponse<PageResult<any>>>('/deliveries/reconciliation/supplier', { params }),
   getSupplierDeliveryDetail: (params: any) =>

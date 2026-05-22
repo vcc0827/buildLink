@@ -8,11 +8,17 @@ export class DeliveryService {
   async findAll(query: any) {
     const page = Number(query.page) || 1;
     const pageSize = Number(query.pageSize) || 10;
-    const { no, productType, status } = query;
+    const { no, productType, status, productName } = query;
     const where: any = { deletedAt: null };
     if (no) where.no = { contains: no };
     if (productType) where.productType = productType;
     if (status) where.status = status;
+    if (productName) {
+      where.OR = [
+        { mortarItems: { some: { productName: { contains: productName } } } },
+        { blockItems: { some: { productName: { contains: productName } } } }
+      ];
+    }
 
     const [list, total] = await Promise.all([
       this.prisma.deliveryOrder.findMany({
@@ -70,6 +76,29 @@ export class DeliveryService {
       contractNo: order.contract?.no,
       items,
     };
+  }
+
+  async getProductNames() {
+    const mortarNames = await this.prisma.deliveryOrderMortar.findMany({
+      where: { productName: { not: null } },
+      select: { productName: true },
+      distinct: ['productName']
+    });
+
+    const blockNames = await this.prisma.deliveryOrderBlock.findMany({
+      where: { productName: { not: null } },
+      select: { productName: true },
+      distinct: ['productName']
+    });
+
+    const allNames = [
+      ...mortarNames.map(item => item.productName).filter(Boolean),
+      ...blockNames.map(item => item.productName).filter(Boolean)
+    ];
+
+    const uniqueNames = [...new Set(allNames)].sort();
+
+    return uniqueNames;
   }
 
   private validateAmount(quantity: number, price: number, amount: number): void {
