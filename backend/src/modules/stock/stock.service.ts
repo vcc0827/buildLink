@@ -335,6 +335,7 @@ export class StockService {
 
         result.push({
           ...record,
+          type: record.type === 'in' || record.type === 'stock_in' ? 'stock_in' : 'stock_out',
           previousQuantity: prevBalance.quantity,
           previousAmount: prevBalance.amount
         });

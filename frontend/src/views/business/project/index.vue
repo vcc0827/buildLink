@@ -93,7 +93,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="3" />
+          <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -150,16 +150,16 @@ const pagination = reactive({
 })
 
 const formRef = ref()
-const form = reactive<Partial<Customer>>({
-  id: undefined,
+const form = reactive({
+  id: undefined as number | undefined,
   name: '',
-  type: 'project',
+  type: 'project' as const,
   category: [] as string[],
   contact: '',
   phone: '',
   address: '',
-  reconciliationUnitId: undefined,
-  status: 'active',
+  reconciliationUnitId: undefined as number | undefined,
+  status: 'active' as const,
   remark: ''
 })
 

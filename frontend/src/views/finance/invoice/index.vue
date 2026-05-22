@@ -109,7 +109,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="2" />
+          <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -154,7 +154,14 @@ watch(activeTab, (val) => {
   loadData()
 })
 
-const getStatusType = (s: string) => ({ pending: 'warning', received: 'success', verified: 'info' }[s] || 'info')
+const getStatusType = (s: string): 'primary' | 'success' | 'warning' | 'info' | 'danger' => {
+  const map: Record<string, 'primary' | 'success' | 'warning' | 'info' | 'danger'> = {
+    pending: 'warning',
+    received: 'success',
+    verified: 'info'
+  }
+  return map[s] || 'info'
+}
 const getStatusText = (s: string) => ({ pending: '待收/待开', received: '已收/已开', verified: '已认证' }[s] || s)
 
 const onCustomerChange = (id: number) => {

@@ -339,9 +339,8 @@ export class DeliveryService {
 
         const contract = await this.prisma.contract.findFirst({
           where: {
-            customerId: customer.id,
-            type: productType === 'mortar' ? 'downstream' : 'upstream',
-            status: { in: ['confirmed', 'active'] }
+            reconciliationUnitId: customer.id,
+            status: { in: ['active'] }
           }
         });
         if (!contract) {
@@ -471,9 +470,8 @@ export class DeliveryService {
     const blockSupplierIds = [...new Set(deliveryOrders.filter(o => o.productType === 'block').map(o => o.supplierId))];
     const contracts = blockSupplierIds.length > 0 ? await this.prisma.contract.findMany({
       where: {
-        customerId: { in: blockSupplierIds },
-        type: 'upstream',
-        status: { in: ['confirmed', 'active'] },
+        reconciliationUnitId: { in: blockSupplierIds },
+        status: { in: ['active'] },
       },
       include: {
         items: { select: { spec: true, price: true } },
@@ -482,14 +480,17 @@ export class DeliveryService {
 
     const contractPriceMap: Record<string, Record<string, number>> = {};
     contracts.forEach((contract) => {
-      if (!contractPriceMap[contract.customerId]) {
-        contractPriceMap[contract.customerId] = {};
+      const key = contract.reconciliationUnitId?.toString() || '';
+      if (!contractPriceMap[key]) {
+        contractPriceMap[key] = {};
       }
-      contract.items.forEach((item) => {
-        if (item.spec) {
-          contractPriceMap[contract.customerId][item.spec] = parseFloat(item.price.toString());
-        }
-      });
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[key][item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
     });
 
     const grouped: Record<number, { supplierId: number; supplierName: string; productType: string; totalQuantity: number; totalAmount: number; deliveryCount: number }> = {};
@@ -576,50 +577,38 @@ export class DeliveryService {
 
     const contracts = await this.prisma.contract.findMany({
       where: {
-        customerId: Number(supplierId),
-        type: 'upstream',
-        status: { in: ['confirmed', 'active'] },
+        reconciliationUnitId: Number(supplierId),
+        status: { in: ['active'] },
       },
       include: {
-        customer: { select: { id: true, name: true } },
         items: { select: { spec: true, price: true } },
       },
     });
 
-    console.log('查询到的厂家合同数量:', contracts.length);
+    console.log('查询到的合同数量:', contracts.length);
     contracts.forEach((contract, index) => {
-      console.log(`合同${index + 1}: no=${contract.no}, id=${contract.id}, status=${contract.status}, customerName=${contract.customer?.name}`);
-      console.log(`合同项目:`);
-      contract.items.forEach((item) => {
-        console.log(`  - spec="${item.spec}", price=${item.price}`);
-      });
+      console.log(`合同${index + 1}: no=${contract.no}, id=${contract.id}, status=${contract.status}`);
+      if (contract.items) {
+        console.log(`合同项目:`);
+        contract.items.forEach((item) => {
+          console.log(`  - spec="${item.spec}", price=${item.price}`);
+        });
+      }
     });
 
     if (contracts.length === 0) {
-      console.log('警告：未找到厂家的合同，尝试查询所有上游合同...');
-      const allBlockContracts = await this.prisma.contract.findMany({
-        where: {
-          type: 'upstream',
-          status: { in: ['confirmed', 'active'] },
-        },
-        include: {
-          customer: { select: { id: true, name: true } },
-          items: { select: { spec: true, price: true } },
-        },
-      });
-      console.log('所有上游合同数量:', allBlockContracts.length);
-      allBlockContracts.forEach((contract, index) => {
-        console.log(`合同${index + 1}: no=${contract.no}, customerId=${contract.customerId}, customerName=${contract.customer?.name}`);
-      });
+      console.log('警告：未找到合同...');
     }
 
     const contractPriceMap: Record<string, number> = {};
     contracts.forEach((contract) => {
-      contract.items.forEach((item) => {
-        if (item.spec) {
-          contractPriceMap[item.spec] = parseFloat(item.price.toString());
-        }
-      });
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
     });
 
     console.log('构建的价格映射:', contractPriceMap);
@@ -710,9 +699,8 @@ export class DeliveryService {
     const customerIds = [...new Set(deliveryOrders.map(o => o.customerId))];
     const contracts = customerIds.length > 0 ? await this.prisma.contract.findMany({
       where: {
-        customerId: { in: customerIds },
-        type: 'downstream',
-        status: { in: ['confirmed', 'active'] },
+        reconciliationUnitId: { in: customerIds },
+        status: { in: ['active'] },
       },
       include: {
         items: { select: { spec: true, price: true } },
@@ -721,14 +709,17 @@ export class DeliveryService {
 
     const contractPriceMap: Record<string, Record<string, number>> = {};
     contracts.forEach((contract) => {
-      if (!contractPriceMap[contract.customerId]) {
-        contractPriceMap[contract.customerId] = {};
+      const key = contract.reconciliationUnitId?.toString() || '';
+      if (!contractPriceMap[key]) {
+        contractPriceMap[key] = {};
       }
-      contract.items.forEach((item) => {
-        if (item.spec) {
-          contractPriceMap[contract.customerId][item.spec] = parseFloat(item.price.toString());
-        }
-      });
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[key][item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
     });
 
     const grouped: Record<string, { customerId: number; customerName: string; productType: string; totalQuantity: number; totalAmount: number; deliveryCount: number }> = {};
@@ -809,9 +800,8 @@ export class DeliveryService {
 
     const contracts = await this.prisma.contract.findMany({
       where: {
-        customerId: Number(customerId),
-        type: 'downstream',
-        status: { in: ['confirmed', 'active'] },
+        reconciliationUnitId: Number(customerId),
+        status: { in: ['active'] },
       },
       include: {
         items: { select: { spec: true, price: true } },
@@ -820,11 +810,13 @@ export class DeliveryService {
 
     const contractPriceMap: Record<string, number> = {};
     contracts.forEach((contract) => {
-      contract.items.forEach((item) => {
-        if (item.spec) {
-          contractPriceMap[item.spec] = parseFloat(item.price.toString());
-        }
-      });
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
     });
 
     const list: any[] = [];

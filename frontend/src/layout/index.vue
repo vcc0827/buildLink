@@ -68,6 +68,7 @@ const menuData = [
       { id: '/reconciliation-unit', label: '对账单位' },
       { id: '/project', label: '项目管理' },
       { id: '/product', label: '产品管理' },
+      { id: '/price-info', label: '信息价管理' },
       { id: '/contract', label: '合同管理' },
       { id: '/delivery', label: '送货单管理' },
       { id: '/upstream', label: '上游对账' },

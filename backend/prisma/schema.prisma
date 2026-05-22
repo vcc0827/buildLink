@@ -69,6 +69,7 @@ model ReconciliationUnit {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
   customers     Customer[]
+  contracts     Contract[]
 
   @@map("reconciliation_units")
 }
@@ -88,7 +89,6 @@ model Customer {
   createdAt            DateTime            @default(now()) @map("created_at")
   updatedAt            DateTime            @updatedAt @map("updated_at")
   reconciliationUnitId Int?                @map("reconciliation_unit_id")
-  contracts            Contract[]
   reconciliationUnit   ReconciliationUnit? @relation(fields: [reconciliationUnitId], references: [id])
   supplierDeliveryOrders DeliveryOrder[]   @relation("DeliverySupplier")
   customerDeliveryOrders DeliveryOrder[]   @relation("DeliveryCustomer")
@@ -140,31 +140,22 @@ model ProductPriceHistory {
 }
 
 model Contract {
-  id             Int             @id @default(autoincrement())
-  no             String          @unique @db.VarChar(50)
-  name           String          @db.VarChar(200)
-  customerId     Int
-  type           String          @db.VarChar(20)
-  amount         Decimal         @db.Decimal(15, 2)
-  signedDate     DateTime        @map("signed_date")
-  startDate      DateTime        @map("start_date")
-  endDate        DateTime        @map("end_date")
-  status         String          @default("draft") @db.VarChar(20)
-  files          Json?
-  unitName       String?         @map("unit_name") @db.VarChar(200)
-  unitAddress    String?         @map("unit_address") @db.VarChar(255)
-  bank           String?         @db.VarChar(100)
-  account        String?         @map("account") @db.VarChar(50)
-  phone          String?         @db.VarChar(20)
-  projectAddress String?         @map("project_address") @db.VarChar(255)
-  remark         String?         @db.Text
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
-  customer       Customer        @relation(fields: [customerId], references: [id])
-  deliveryOrders DeliveryOrder[]
-  items          ContractItem[]
+  id              Int             @id @default(autoincrement())
+  no              String          @unique @db.VarChar(50)
+  name            String          @db.VarChar(200)
+  reconciliationUnitId Int?       @map("reconciliation_unit_id")
+  projectName     String?         @map("project_name") @db.VarChar(200)
+  type            String          @db.VarChar(20)
+  signedDate      DateTime        @map("signed_date")
+  status          String          @default("draft") @db.VarChar(20)
+  remark          String?         @db.Text
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  reconciliationUnit ReconciliationUnit? @relation(fields: [reconciliationUnitId], references: [id])
+  items           ContractItem[]
+  deliveryOrders  DeliveryOrder[]
 
-  @@index([customerId], map: "contracts_customerId_fkey")
+  @@index([reconciliationUnitId], map: "contracts_reconciliation_unit_id_fkey")
   @@map("contracts")
 }
 
@@ -351,6 +342,26 @@ model OperationLog {
 }
 
 // 库存记录表
+// 信息价表
+model PriceInfo {
+  id                 Int      @id @default(autoincrement())
+  region             String   @db.VarChar(50)
+  category           String   @db.VarChar(100)
+  model              String   @db.VarChar(100)
+  spec               String   @db.VarChar(100)
+  unit               String   @db.VarChar(20)
+  taxIncludedPrice   Decimal  @db.Decimal(15, 2) @map("tax_included_price")
+  taxExcludedPrice   Decimal  @db.Decimal(15, 2) @map("tax_excluded_price")
+  month              String   @db.VarChar(20)
+  remark             String?  @db.Text
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([region, month], map: "price_info_region_month_idx")
+  @@index([category, model, spec], map: "price_info_category_model_spec_idx")
+  @@map("price_info")
+}
+
 model StockRecord {
   id          Int       @id @default(autoincrement())
   no          String    @unique @db.VarChar(50)

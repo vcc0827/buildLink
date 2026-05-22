@@ -139,7 +139,7 @@ const todos = ref([
   { id: 3, type: 'payment', typeName: '付款', content: '江苏石料厂 付款申请', amount: 156000 }
 ])
 
-const recentTodos = ref([
+const recentTodos = ref<{ id: number; type: 'primary' | 'success' | 'warning' | 'info' | 'danger'; title: string; content: string; date: string }[]>([
   { id: 1, type: 'primary', title: '送货单待确认', content: '杭州工地 ALC板送货单 #DL20240501', date: '2024-05-01' },
   { id: 2, type: 'warning', title: '上游对账', content: '山东砂浆供应商 月度对账单待审核', date: '2024-04-30' },
   { id: 3, type: 'success', title: '发票已收', content: '进项发票 #INV20240428 已入库', date: '2024-04-28' },

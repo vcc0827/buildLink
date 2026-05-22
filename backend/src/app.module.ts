@@ -15,6 +15,7 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { ReconciliationUnitModule } from './modules/reconciliation-unit/reconciliation-unit.module';
 import { StockModule } from './modules/stock/stock.module';
+import { PriceInfoModule } from './modules/price-info/price-info.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { StockModule } from './modules/stock/stock.module';
     ReconciliationModule,
     ReconciliationUnitModule,
     StockModule,
+    PriceInfoModule,
   ],
 })
 export class AppModule {}

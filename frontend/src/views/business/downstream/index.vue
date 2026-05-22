@@ -28,7 +28,7 @@
     <el-table :data="tableData" border stripe v-loading="loading">
       <el-table-column prop="customerName" label="工地项目" />
       <el-table-column prop="productType" label="产品类型" width="100">
-        <template #default="{ row }"> {{ row.productType === 'mortar' ? '砂浆' : '砌块' }} </template>
+        <template #default="{ row }"> {{ row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块' }} </template>
       </el-table-column>
       <el-table-column prop="totalQuantity" label="总数量" width="140" align="right">
         <template #default="{ row }">
@@ -213,7 +213,7 @@ const detailData = reactive({
 
 const detailDialogTitle = computed(() => {
   if (detailData.productType === 'block') {
-    return '砌块对账确认单'
+    return '蒸压加气混凝土砌块对账确认单'
   } else {
     return '砂浆对账确认单'
   }

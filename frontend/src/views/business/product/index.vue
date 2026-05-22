@@ -24,11 +24,10 @@
     </div>
 
     <el-table :data="tableData" border stripe v-loading="loading">
-      <el-table-column type="index" label="序号" width="60" align="center" />
       <el-table-column prop="name" label="产品名称" min-width="150" />
-      <el-table-column prop="unit" label="计量单位" width="100" />
       <el-table-column prop="model" label="型号" width="120" />
       <el-table-column prop="spec" label="规格" width="150" />
+      <el-table-column prop="unit" label="计量单位" width="100" />
       <el-table-column prop="pricingType" label="计价类型" width="120">
         <template #default="{ row }">
           <el-tag :type="row.pricingType === 'info_price' ? 'primary' : 'success'" size="small">
@@ -97,7 +96,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="3" />
+          <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>

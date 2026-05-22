@@ -11,7 +11,7 @@
         />
         <el-select v-model="queryForm.category" placeholder="主营品类" clearable class="search-select">
           <el-option value="砂浆" label="砂浆" />
-          <el-option value="砌块" label="砌块" />
+          <el-option value="蒸压加气混凝土砌块" label="蒸压加气混凝土砌块" />
           <el-option value="供销商" label="供销商" />
         </el-select>
         <el-select v-model="queryForm.status" placeholder="状态" clearable class="search-select">
@@ -71,7 +71,7 @@
         <el-form-item label="主营品类" prop="category">
           <el-select v-model="form.category" placeholder="请选择主营品类" style="width: 100%">
             <el-option value="砂浆" label="砂浆" />
-            <el-option value="砌块" label="砌块" />
+            <el-option value="蒸压加气混凝土砌块" label="蒸压加气混凝土砌块" />
             <el-option value="供销商" label="供销商" />
           </el-select>
         </el-form-item>
@@ -97,7 +97,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="3" />
+          <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -112,7 +112,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+
 import type { Customer } from '@/types'
 import { customerApi } from '@/api'
 
@@ -205,19 +205,7 @@ const handleView = (row: Customer) => {
   handleEdit(row)
 }
 
-const handleExport = () => {
-  const headers = ['序号', '厂家名称', '主营品类', '状态']
-  const data = tableData.value.map((row, index) => [
-    index + 1,
-    row.name,
-    row.category || '-',
-    row.status === 'active' ? '启用' : '禁用'
-  ])
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...data])
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '厂家列表')
-  XLSX.writeFile(wb, `厂家列表_${new Date().toISOString().split('T')[0]}.xlsx`)
-}
+
 
 const handleSubmit = async () => {
   const valid = await formRef.value.validate().catch(() => false)

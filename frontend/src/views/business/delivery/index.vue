@@ -45,7 +45,7 @@
       <el-table-column prop="productType" label="产品类型" width="100">
         <template #default="{ row }">
           <el-tag :type="row.productType === 'mortar' ? 'success' : 'warning'" size="small">
-            {{ row.productType === 'mortar' ? '砂浆' : '砌块' }}
+            {{ row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块' }}
           </el-tag>
         </template>
       </el-table-column>
@@ -80,7 +80,7 @@
             <el-form-item label="产品类型" prop="productType">
               <el-select v-model="form.productType" placeholder="请选择" :disabled="!!form.id" style="width: 100%" @change="onProductTypeChange">
                 <el-option label="砂浆" value="mortar" />
-                <el-option label="砌块" value="block" />
+                <el-option label="蒸压加气混凝土砌块" value="block" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -238,7 +238,7 @@
             </el-table-column>
           </el-table>
           <el-button type="primary" link class="mt-8" @click="addBlockItem">
-            <el-icon><Plus /></el-icon> 添加砌块明细
+            <el-icon><Plus /></el-icon> 添加蒸压加气混凝土砌块明细
           </el-button>
         </div>
 
@@ -251,7 +251,7 @@
         </el-row>
 
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="2" />
+          <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -274,7 +274,7 @@
         <el-table-column prop="productType" label="产品类型" width="100">
           <template #default="{ row }">
             <el-tag :type="row.productType === 'mortar' ? 'success' : 'warning'" size="small">
-              {{ row.productType === 'mortar' ? '砂浆' : '砌块' }}
+              {{ row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -301,7 +301,7 @@
         <el-form-item label="产品类型" required>
           <el-radio-group v-model="importForm.productType">
             <el-radio label="mortar">砂浆</el-radio>
-            <el-radio label="block">砌块</el-radio>
+            <el-radio label="block">蒸压加气混凝土砌块</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="选择文件" required>
@@ -404,7 +404,14 @@ const rules = {
   deliveryDate: [{ required: true, message: '请选择日期', trigger: 'change' }]
 }
 
-const getStatusType = (status: string) => ({ pending: 'warning', delivered: 'primary', confirmed: 'success' }[status] || 'info')
+const getStatusType = (status: string): 'primary' | 'success' | 'warning' | 'info' | 'danger' => {
+  const map: Record<string, 'primary' | 'success' | 'warning' | 'info' | 'danger'> = {
+    pending: 'warning',
+    delivered: 'primary',
+    confirmed: 'success'
+  }
+  return map[status] || 'info'
+}
 const getStatusText = (status: string) => ({ pending: '待发货', delivered: '已发货', confirmed: '已确认' }[status] || status)
 
 const calcMortarItemAmount = (item: DeliveryOrderMortarItem) => {
@@ -589,7 +596,7 @@ const loadProducts = async () => {
 }
 
 const handleQuery = () => { pagination.page = 1; loadData() }
-const handleReset = () => { Object.assign(queryForm, { no: '', productType: '', status: '' }); handleQuery() }
+
 
 const handleAdd = () => {
   Object.assign(form, {
@@ -745,7 +752,7 @@ const downloadTemplate = () => {
   const ws = XLSX.utils.aoa_to_sheet(templateData)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '送货单')
-  XLSX.writeFile(wb, `送货单导入模板_${importForm.productType === 'mortar' ? '砂浆' : '砌块'}.xlsx`)
+  XLSX.writeFile(wb, `送货单导入模板_${importForm.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块'}.xlsx`)
 }
 
 const getMortarTemplate = (): string[][] => {
@@ -758,7 +765,7 @@ const getMortarTemplate = (): string[][] => {
 const getBlockTemplate = (): string[][] => {
   return [
     ['送货单号', '供货单位', '项目名称', '送货日期', '产品名称', '规格型号', '实收数量', '折立方', '单价', '金额', '铁架数量', '铁架返还', '备注'],
-    ['SHD-001', '厂家A', '项目C', '2026-05-01', '砌块', '600*200*200', '100', '80', '120', '9600', '10', '5', '']
+    ['SHD-001', '厂家A', '项目C', '2026-05-01', '蒸压加气混凝土砌块', '600*200*200', '100', '80', '120', '9600', '10', '5', '']
   ]
 }
 
@@ -907,7 +914,7 @@ const handleExport = () => {
     row.no,
     row.supplierName,
     row.customerName,
-    row.productType === 'mortar' ? '砂浆' : '砌块',
+    row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块',
     formatDate(row.deliveryDate),
     row.totalAmount,
     getStatusText(row.status)

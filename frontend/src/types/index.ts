@@ -59,12 +59,12 @@ export interface ContractItem {
   productId?: number
   productName: string
   unit: string
+  price: number
+  basePrice?: number
+  adjustmentType?: string
+  adjustmentValue?: number
   model?: string
   spec?: string
-  basePrice: number
-  adjustmentType: 'percentage' | 'fixed' | 'markup'
-  adjustmentValue: number
-  price: number
   product?: { id: number; name: string }
 }
 
@@ -72,22 +72,12 @@ export interface Contract {
   id: number
   no: string
   name: string
-  customerId: number
-  customerName: string
-  customerType?: string
-  type: 'upstream' | 'downstream'
-  amount: number
+  reconciliationUnitId?: number
+  companyName?: string
+  projectName?: string
+  type?: string
   signedDate: string
-  startDate: string
-  endDate: string
   status: 'draft' | 'active' | 'completed' | 'cancelled'
-  files?: string[]
-  unitName?: string
-  unitAddress?: string
-  bank?: string
-  account?: string
-  phone?: string
-  projectAddress?: string
   remark?: string
   items?: ContractItem[]
   itemCount?: number

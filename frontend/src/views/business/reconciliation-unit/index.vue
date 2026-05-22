@@ -98,7 +98,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="3" />
+          <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -110,16 +110,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import type { ReconciliationUnit } from '@/types'
+
 import { reconciliationUnitApi } from '@/api'
 
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const dialogVisible = ref(false)
-const dialogTitle = computed(() => (form.id ? '编辑对账单位' : '新增对账单位'))
+const dialogTitle = ref('新增对账单位')
 
 const queryForm = reactive({
   companyName: '',
@@ -185,6 +185,7 @@ const handleAdd = () => {
     address: '', phone: '', contact: '', bankName: '', bankAccount: '',
     bankCode: '', status: 'active', remark: ''
   })
+  dialogTitle.value = '新增对账单位'
   dialogVisible.value = true
 }
 

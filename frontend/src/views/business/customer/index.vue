@@ -82,7 +82,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="主营品类" prop="category">
-          <el-input v-model="form.category" placeholder="如：砂浆、砌块、ALC板" />
+          <el-input v-model="form.category" placeholder="如：砂浆、蒸压加气混凝土砌块、ALC板" />
         </el-form-item>
         <el-form-item label="联系人" prop="contact">
           <el-input v-model="form.contact" placeholder="请输入" />
@@ -106,7 +106,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="3" />
+          <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -170,7 +170,7 @@ const loadData = async () => {
   } catch {
     tableData.value = [
       {
-        id: 1, name: '浙江建材有限公司', type: 'supplier', category: '砂浆、砌块',
+        id: 1, name: '浙江建材有限公司', type: 'supplier', category: '砂浆、蒸压加气混凝土砌块',
         contact: '张经理', phone: '13800138000', status: 'active',
         createdAt: '2024-01-15', updatedAt: '2024-01-15'
       },

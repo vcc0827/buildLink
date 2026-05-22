@@ -186,20 +186,25 @@ import { Plus, Minus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { stockApi, customerApi, productApi } from '@/api'
 
-const monthOptions = [
-  { label: '1月', value: '1月' },
-  { label: '2月', value: '2月' },
-  { label: '3月', value: '3月' },
-  { label: '4月', value: '4月' },
-  { label: '5月', value: '5月' },
-  { label: '6月', value: '6月' },
-  { label: '7月', value: '7月' },
-  { label: '8月', value: '8月' },
-  { label: '9月', value: '9月' },
-  { label: '10月', value: '10月' },
-  { label: '11月', value: '11月' },
-  { label: '12月', value: '12月' },
-]
+const monthOptions = ref<{ label: string; value: string }[]>([])
+
+const generateMonthOptions = () => {
+  const options = []
+  const now = new Date()
+  for (let i = 0; i < 12; i++) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const value = `${year}-${month}`
+    const label = `${year}年${month}月`
+    options.push({ label, value })
+  }
+  // 按时间正序排列（最近的在下拉列表前面）
+  options.reverse()
+  return options
+}
+
+monthOptions.value = generateMonthOptions()
 
 const currentMonth = `${new Date().getMonth() + 1}月`
 const activeTab = ref('detail')
@@ -215,7 +220,6 @@ const productList = ref<any[]>([])
 const unitOptions = ref<any[]>([])
 const productOptions = ref<any[]>([])
 
-const stockList = ref<any[]>([])
 const stockListWithPreviousStock = ref<any[]>([])
 const summaryData = ref<any[]>([])
 
@@ -306,7 +310,7 @@ const handleEdit = (row: any) => {
 const handleDelete = async (row: any) => {
   if (row.id && typeof row.id === 'number') {
     const res = await stockApi.delete(row.id)
-    if (res.success) {
+    if (res.code === 200) {
       ElMessage.success('删除成功')
       await loadStockList()
     } else {
@@ -362,7 +366,7 @@ const handleSubmit = async () => {
     res = await stockApi.create(data)
   }
 
-  if (res.success) {
+  if (res.code === 200) {
     ElMessage.success(form.id ? '修改成功' : '新增成功')
     dialogVisible.value = false
     await loadStockList()
@@ -378,20 +382,27 @@ const loadStockList = async () => {
   if (queryForm.product) params.product = queryForm.product
 
   const res = await stockApi.listWithBalance(params)
-  if (res.success) {
-    stockListWithPreviousStock.value = res.data
+  if (res.code === 200) {
+      stockListWithPreviousStock.value = res.data.map((item: any) => ({
+      ...item,
+      quantity: Number(item.quantity || 0),
+      amount: Number(item.amount || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      previousQuantity: Number(item.previousQuantity || 0),
+      previousAmount: Number(item.previousAmount || 0),
+    }))
   }
 
   const summaryRes = await stockApi.getSummary(params)
-  if (summaryRes.success) {
+  if (summaryRes.code === 200) {
     summaryData.value = summaryRes.data
   }
 }
 
 const loadCustomers = async () => {
   const res = await customerApi.list({ page: 1, pageSize: 100 })
-  if (res.success) {
-    customerOptions.value = res.data.data.map((item: any) => ({
+  if (res.code === 200) {
+    customerOptions.value = res.data.list.map((item: any) => ({
       id: item.id,
       name: item.name,
       type: item.type,
@@ -405,9 +416,9 @@ const loadCustomers = async () => {
 
 const loadProducts = async () => {
   const res = await productApi.list({ page: 1, pageSize: 100 })
-  if (res.success) {
-    productList.value = res.data.data
-    const productNames = [...new Set(res.data.data.map((p: any) => p.name))]
+  if (res.code === 200) {
+    productList.value = res.data.list
+    const productNames = [...new Set(res.data.list.map((p: any) => p.name))]
     productOptions.value = productNames.map(name => ({
       label: name,
       value: name,

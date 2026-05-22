@@ -29,7 +29,7 @@
       <el-table-column prop="supplierName" label="厂家名称" min-width="200" />
       <el-table-column prop="productType" label="类型" width="100">
         <template #default="{ row }">
-          <span>{{ row.productType === 'mortar' ? '砂浆' : '砌块' }}</span>
+          <span>{{ row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块' }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="totalQuantity" label="总数量" width="140" align="right">
@@ -206,7 +206,7 @@ const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
 const dialogTitle = computed(() => {
   if (!currentRow.value) return ''
-  return currentRow.value.productType === 'mortar' ? '砂浆对账确认单' : '砌块对账确认单'
+  return currentRow.value.productType === 'mortar' ? '砂浆对账确认单' : '蒸压加气混凝土砌块对账确认单'
 })
 
 const getStatusType = (s: string) => {

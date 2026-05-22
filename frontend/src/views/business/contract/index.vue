@@ -2,13 +2,20 @@
   <div class="page-container">
     <div class="table-search">
       <el-form :model="queryForm" inline class="search-form">
+        <el-form-item label="合同编号">
+          <el-input v-model="queryForm.no" placeholder="请输入" clearable />
+        </el-form-item>
         <el-form-item label="合同名称">
           <el-input v-model="queryForm.name" placeholder="请输入" clearable />
         </el-form-item>
-        <el-form-item label="合同类型">
-          <el-select v-model="queryForm.type" placeholder="请选择" clearable>
-            <el-option label="上游合同" value="upstream" />
-            <el-option label="下游合同" value="downstream" />
+        <el-form-item label="签约方">
+          <el-select v-model="queryForm.reconciliationUnitId" placeholder="请选择" clearable>
+            <el-option
+              v-for="unit in reconciliationUnits"
+              :key="unit.id"
+              :label="unit.companyName"
+              :value="unit.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
@@ -36,26 +43,10 @@
     <el-table :data="tableData" border stripe v-loading="loading">
       <el-table-column prop="no" label="合同编号" width="150" />
       <el-table-column prop="name" label="合同名称" min-width="180" />
-      <el-table-column label="签约方" width="180">
-        <template #default="{ row }">
-          {{ row.customerName }}
-          <el-tag size="small" :type="row.customerType === 'supplier' ? 'success' : 'warning'">
-            {{ row.customerType === 'supplier' ? '厂家' : '项目' }}
-          </el-tag>
-        </template>
-      </el-table-column>
+      <el-table-column prop="companyName" label="签约方" width="180" />
+      <el-table-column prop="projectName" label="项目名称" width="180" />
       <el-table-column prop="itemCount" label="产品数" width="80">
         <template #default="{ row }"> {{ row.itemCount || 0 }}种 </template>
-      </el-table-column>
-      <el-table-column prop="type" label="类型" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.type === 'upstream' ? 'success' : 'warning'" size="small">
-            {{ row.type === 'upstream' ? '上游' : '下游' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="amount" label="合同金额" width="120" align="right">
-        <template #default="{ row }"> ¥{{ row.amount?.toLocaleString() }} </template>
       </el-table-column>
       <el-table-column prop="signedDate" label="签订日期" width="110" />
       <el-table-column prop="status" label="状态" width="100">
@@ -90,75 +81,36 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="合同编号" prop="no">
-              <el-input v-model="form.no" placeholder="系统自动生成" disabled />
+              <el-input v-model="form.no" placeholder="请输入合同编号" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="合同类型" prop="type">
-              <el-select v-model="form.type" placeholder="请选择">
-                <el-option label="上游合同" value="upstream" />
-                <el-option label="下游合同" value="downstream" />
-              </el-select>
+            <el-form-item label="签订日期" prop="signedDate">
+              <el-date-picker v-model="form.signedDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
+        
         <el-form-item label="合同名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入" />
         </el-form-item>
 
         <el-divider content-position="left">签约方信息</el-divider>
 
-        <el-form-item label="签约方" prop="customerId">
-          <el-select v-model="form.customerId" placeholder="请选择" @change="onCustomerChange" style="width: 100%">
+        <el-form-item label="签约方（对账单位）" prop="reconciliationUnitId">
+          <el-select v-model="form.reconciliationUnitId" placeholder="请选择对账单位" style="width: 100%">
             <el-option
-              v-for="c in filteredCustomers"
-              :key="c.id"
-              :label="c.name"
-              :value="c.id"
+              v-for="unit in reconciliationUnits"
+              :key="unit.id"
+              :label="unit.companyName"
+              :value="unit.id"
             />
           </el-select>
         </el-form-item>
 
-        <template v-if="form.customerId">
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="单位名称">
-                <el-input v-model="form.unitName" placeholder="自动填充" disabled />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="电话">
-                <el-input v-model="form.phone" placeholder="自动填充" disabled />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="24">
-              <el-form-item label="单位地址">
-                <el-input v-model="form.unitAddress" placeholder="自动填充" disabled />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="开户银行">
-                <el-input v-model="form.bank" placeholder="自动填充" disabled />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="银行账户">
-                <el-input v-model="form.account" placeholder="自动填充" disabled />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="24">
-              <el-form-item label="项目地址">
-                <el-input v-model="form.projectAddress" placeholder="请输入项目地址" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </template>
+        <el-form-item label="项目名称" prop="projectName">
+          <el-input v-model="form.projectName" placeholder="请输入项目名称" />
+        </el-form-item>
 
         <el-divider content-position="left">产品明细</el-divider>
 
@@ -169,88 +121,32 @@
           <el-table :data="form.items" border size="small">
             <el-table-column label="产品名称" width="150">
               <template #default="{ row, $index }">
-                <el-select v-if="!viewMode" v-model="row.category" placeholder="选择大类" @change="onCategoryChange($index)" style="width: 100%">
+                <el-select v-if="!viewMode" v-model="row.productId" placeholder="选择产品" @change="onProductChange($index)" style="width: 100%">
                   <el-option
-                    v-for="cat in productCategories"
-                    :key="cat"
-                    :label="cat"
-                    :value="cat"
+                    v-for="product in products"
+                    :key="product.id"
+                    :label="product.name + (product.model ? '-' + product.model : '') + (product.spec ? '-' + product.spec : '')"
+                    :value="product.id"
                   />
                 </el-select>
-                <span v-else>{{ row.category }}</span>
+                <span v-else>{{ row.productName }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="型号" width="120">
-              <template #default="{ row, $index }">
-                <el-select v-if="!viewMode" v-model="row.model" placeholder="选择型号" @change="onModelChange($index)" style="width: 100%">
-                  <el-option
-                    v-for="model in getModelsByCategory(row.category)"
-                    :key="model"
-                    :label="model"
-                    :value="model"
-                  />
-                </el-select>
-                <span v-else>{{ row.model }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="规格" width="120">
-              <template #default="{ row, $index }">
-                <el-select v-if="!viewMode" v-model="row.spec" placeholder="选择规格" style="width: 100%">
-                  <el-option
-                    v-for="spec in getSpecsByCategoryAndModel(row.category, row.model)"
-                    :key="spec"
-                    :label="spec"
-                    :value="spec"
-                  />
-                </el-select>
-                <span v-else>{{ row.spec }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="计量单位" width="80">
+            <el-table-column label="计量单位" width="100">
               <template #default="{ row }">
                 <span>{{ row.unit }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="单价" width="100">
+            <el-table-column label="单价" width="120">
               <template #default="{ row }">
                 <el-input-number v-if="!viewMode"
-                  v-model="row.basePrice"
+                  v-model="row.price"
                   :min="0"
                   :precision="2"
                   :controls="false"
                   style="width: 100%"
-                  @change="onPriceChange"
                 />
-                <span v-else>¥{{ parseFloat(row.basePrice || 0).toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="调整方式" width="100">
-              <template #default="{ row }">
-                <el-select v-if="!viewMode" v-model="row.adjustmentType" placeholder="选择方式" @change="onAdjustmentTypeChange($index)" style="width: 100%">
-                  <el-option label="信息价" value="info_price" />
-                  <el-option label="固定价" value="fixed_price" />
-                </el-select>
-                <span v-else>{{ row.adjustmentType === 'info_price' ? '信息价' : '固定价' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="调整值" width="100">
-              <template #default="{ row }">
-                <el-input-number v-if="!viewMode"
-                  v-model="row.adjustmentValue"
-                  :min="0"
-                  :max="row.adjustmentType === 'info_price' ? 1 : 999999"
-                  :precision="2"
-                  :controls="false"
-                  :disabled="row.adjustmentType !== 'info_price'"
-                  style="width: 100%"
-                  @change="onPriceChange"
-                />
-                <span v-else>{{ parseFloat(row.adjustmentValue || 0).toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="实际单价" width="100">
-              <template #default="{ row }">
-                <span class="price-value">¥{{ parseFloat(row.price || 0).toFixed(2) }}</span>
+                <span v-else>¥{{ parseFloat(row.price || 0).toFixed(2) }}</span>
               </template>
             </el-table-column>
             <el-table-column v-if="!viewMode" label="操作" width="80">
@@ -261,32 +157,8 @@
           </el-table>
         </div>
 
-        <el-divider content-position="left">合同信息</el-divider>
+        <el-divider content-position="left">其他信息</el-divider>
 
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="合同金额" prop="amount">
-              <el-input-number v-model="form.amount" :min="0" :precision="2" :controls="false" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="签订日期" prop="signedDate">
-              <el-date-picker v-model="form.signedDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="开始日期" prop="startDate">
-              <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="结束日期" prop="endDate">
-              <el-date-picker v-model="form.endDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
         <el-form-item label="状态" prop="status">
           <el-select v-model="form.status" placeholder="请选择">
             <el-option label="草稿" value="draft" />
@@ -296,7 +168,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="form.remark" type="textarea" rows="3" />
+          <el-input v-model="form.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -308,36 +180,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import type { Contract, Customer, Product, ContractItem } from '@/types'
-import { contractApi, customerApi, productApi } from '@/api'
+import type { Contract, ContractItem, Product, ReconciliationUnit } from '@/types'
+import { contractApi, productApi, reconciliationUnitApi } from '@/api'
 
 const loading = ref(false)
 const tableData = ref<Contract[]>([])
 const dialogVisible = ref(false)
-const customers = ref<Customer[]>([])
+const reconciliationUnits = ref<ReconciliationUnit[]>([])
 const products = ref<Product[]>([])
-const productCategories = ref<string[]>([])
-const productsByCategory = ref<Record<string, Product[]>>({})
-const modelsByCategory = ref<Record<string, string[]>>({})
-const specsByCategoryAndModel = ref<Record<string, Record<string, string[]>>>({})
 
-const getModelsByCategory = (category: string | undefined) => {
-  if (!category) return []
-  return modelsByCategory.value[category] || []
-}
-
-const getSpecsByCategoryAndModel = (category: string | undefined, model: string | undefined) => {
-  if (!category || !model) return []
-  return specsByCategoryAndModel.value[category]?.[model] || []
-}
 const dialogTitle = computed(() => (form.id ? '编辑合同' : '新增合同'))
 
 const queryForm = reactive({
+  no: '',
   name: '',
-  type: '',
+  reconciliationUnitId: '',
   status: ''
 })
 
@@ -352,39 +212,20 @@ const form = reactive<any>({
   id: undefined,
   no: '',
   name: '',
-  type: 'upstream',
-  customerId: undefined,
-  customerName: '',
-  customerType: '',
-  amount: 0,
+  reconciliationUnitId: undefined,
+  projectName: '',
   signedDate: '',
-  startDate: '',
-  endDate: '',
   status: 'draft',
-  unitName: '',
-  unitAddress: '',
-  bank: '',
-  account: '',
-  phone: '',
-  projectAddress: '',
   remark: '',
   items: [] as ContractItem[]
 })
 
-const filteredCustomers = computed(() => {
-  return customers.value.filter(c => c.type === (form.type === 'upstream' ? 'supplier' : 'project'))
-})
-
-watch(() => form.type, () => {
-  form.customerId = undefined
-  form.customerName = ''
-  form.customerType = ''
-})
-
 const rules = {
+  no: [{ required: true, message: '请输入合同编号', trigger: 'blur' }],
   name: [{ required: true, message: '请输入合同名称', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择合同类型', trigger: 'change' }],
-  customerId: [{ required: true, message: '请选择签约方', trigger: 'change' }]
+  reconciliationUnitId: [{ required: true, message: '请选择签约方', trigger: 'change' }],
+  projectName: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
+  signedDate: [{ required: true, message: '请选择签订日期', trigger: 'change' }]
 }
 
 const getStatusType = (status: string) => {
@@ -404,7 +245,12 @@ const getStatusText = (status: string) => {
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await contractApi.list({ ...queryForm, page: pagination.page, pageSize: pagination.pageSize })
+    const params = {
+      ...queryForm,
+      page: pagination.page,
+      pageSize: pagination.pageSize
+    }
+    const res = await contractApi.list(params)
     tableData.value = res.data.list
     pagination.total = res.data.total
   } catch {
@@ -415,12 +261,12 @@ const loadData = async () => {
   }
 }
 
-const loadCustomers = async () => {
+const loadReconciliationUnits = async () => {
   try {
-    const res = await customerApi.list({ page: 1, pageSize: 100 })
-    customers.value = res.data.list
+    const res = await reconciliationUnitApi.list({ page: 1, pageSize: 100 })
+    reconciliationUnits.value = res.data.list
   } catch {
-    customers.value = []
+    reconciliationUnits.value = []
   }
 }
 
@@ -428,127 +274,26 @@ const loadProducts = async () => {
   try {
     const res = await productApi.list({ page: 1, pageSize: 100, status: 'active' })
     products.value = res.data.list
-    
-    const categories: string[] = []
-    const modelMap: Record<string, string[]> = {}
-    const specMap: Record<string, Record<string, string[]>> = {}
-    
-    res.data.list.forEach((p: Product) => {
-      const category = p.name
-      const model = p.model || ''
-      const spec = p.spec || ''
-      
-      if (!categories.includes(category)) {
-        categories.push(category)
-      }
-      
-      if (!modelMap[category]) {
-        modelMap[category] = []
-      }
-      if (!modelMap[category].includes(model)) {
-        modelMap[category].push(model)
-      }
-      
-      if (!specMap[category]) {
-        specMap[category] = {}
-      }
-      if (!specMap[category][model]) {
-        specMap[category][model] = []
-      }
-      if (!specMap[category][model].includes(spec)) {
-        specMap[category][model].push(spec)
-      }
-    })
-    
-    productCategories.value = categories
-    modelsByCategory.value = modelMap
-    specsByCategoryAndModel.value = specMap
   } catch {
     products.value = []
   }
 }
 
-const getProductsByCategory = (category: string | undefined) => {
-  if (!category) return []
-  return productsByCategory.value[category] || []
-}
-
-const onCustomerChange = async (id: number) => {
-  const customer = customers.value.find(c => c.id === id)
-  if (customer) {
-    form.customerName = customer.name
-    form.customerType = customer.type
-    form.unitName = customer.name
-    form.unitAddress = customer.address || ''
-    form.phone = customer.phone || ''
-    form.bank = customer.bank || ''
-    form.account = customer.account || ''
-  }
-}
-
-const onCategoryChange = (index: number) => {
-  form.items[index].spec = ''
-  form.items[index].unit = ''
-  form.items[index].model = ''
-  form.items[index].basePrice = 0
-  form.items[index].adjustmentType = 'fixed_price'
-  form.items[index].adjustmentValue = 0
-  form.items[index].price = 0
-}
-
-const onModelChange = (index: number) => {
-  const category = form.items[index].category
-  const model = form.items[index].model
-  form.items[index].spec = ''
-  const product = products.value.find(p => p.name === category && p.model === model)
+const onProductChange = (index: number) => {
+  const productId = form.items[index].productId
+  const product = products.value.find(p => p.id === productId)
   if (product) {
+    form.items[index].productName = product.name + (product.model ? '-' + product.model : '') + (product.spec ? '-' + product.spec : '')
     form.items[index].unit = product.unit || ''
-    form.items[index].basePrice = product.price || 0
-    calculateItemPrice(form.items[index])
+    form.items[index].price = product.price || 0
   }
-}
-
-const onAdjustmentTypeChange = (index: number) => {
-  const item = form.items[index]
-  if (!item) return
-  if (item.adjustmentType === 'info_price') {
-    item.adjustmentValue = 0
-  } else {
-    item.adjustmentValue = item.basePrice || 0
-  }
-  calculateItemPrice(item)
-}
-
-const calculateItemPrice = (item: any) => {
-  if (!item) return
-  const basePrice = parseFloat(item.basePrice || 0)
-  const adjustmentType = item.adjustmentType || 'fixed_price'
-  const adjustmentValue = parseFloat(item.adjustmentValue || 0)
-
-  if (adjustmentType === 'info_price') {
-    item.price = parseFloat((basePrice * (1 - adjustmentValue)).toFixed(2))
-  } else {
-    item.price = parseFloat(basePrice.toFixed(2))
-  }
-}
-
-const onPriceChange = () => {
-  form.items.forEach((item: any) => {
-    calculateItemPrice(item)
-  })
 }
 
 const handleAddItem = () => {
   form.items.push({
-    category: '',
     productId: undefined,
     productName: '',
     unit: '',
-    model: '',
-    spec: '',
-    basePrice: 0,
-    adjustmentType: 'fixed_price',
-    adjustmentValue: 0,
     price: 0
   })
 }
@@ -563,7 +308,7 @@ const handleQuery = () => {
 }
 
 const handleReset = () => {
-  Object.assign(queryForm, { name: '', type: '', status: '' })
+  Object.assign(queryForm, { no: '', name: '', reconciliationUnitId: '', status: '' })
   handleQuery()
 }
 
@@ -571,25 +316,17 @@ const handleAdd = async () => {
   form.id = undefined
   form.no = ''
   form.name = ''
-  form.type = 'upstream'
-  form.customerId = undefined
-  form.customerName = ''
-  form.customerType = ''
-  form.amount = 0
+  form.reconciliationUnitId = undefined
+  form.projectName = ''
   form.signedDate = ''
-  form.startDate = ''
-  form.endDate = ''
   form.status = 'draft'
-  form.unitName = ''
-  form.unitAddress = ''
-  form.bank = ''
-  form.account = ''
-  form.phone = ''
-  form.projectAddress = ''
   form.remark = ''
   form.items = []
+  viewMode.value = false
   dialogVisible.value = true
 }
+
+const viewMode = ref(false)
 
 const handleEdit = async (row: Contract) => {
   try {
@@ -602,8 +339,6 @@ const handleEdit = async (row: Contract) => {
     ElMessage.error('获取合同详情失败')
   }
 }
-
-const viewMode = ref(false)
 
 const handleView = async (row: Contract) => {
   try {
@@ -649,7 +384,7 @@ const handleSubmit = async () => {
 
 onMounted(() => {
   loadData()
-  loadCustomers()
+  loadReconciliationUnits()
   loadProducts()
 })
 </script>
