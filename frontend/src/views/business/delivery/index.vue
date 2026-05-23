@@ -47,7 +47,11 @@
       <!-- 数据表格 -->
       <el-table :data="tableData" border stripe v-loading="loading">
         <el-table-column prop="no" label="单号" width="180" />
-        <el-table-column prop="date" label="日期" width="100" formatter={(row) => formatDate(row.date)} />
+        <el-table-column prop="date" label="日期" width="100">
+          <template #default="{ row }">
+            {{ formatDate(row.date) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="projectName" label="送货单位" min-width="200" />
         <el-table-column prop="supplierName" label="供应商" min-width="200" />
         <el-table-column prop="salesman" label="业务员" width="100" />
