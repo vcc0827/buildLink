@@ -7,43 +7,13 @@ import { DeliveryService } from './delivery.service';
 export class DeliveryController {
   constructor(private deliveryService: DeliveryService) {}
 
-  @Get('product-names')
-  async getProductNames() {
-    return this.deliveryService.getProductNames();
-  }
-
-  @Get('deleted')
-  async getDeleted(@Query() query: any) {
-    return this.deliveryService.getDeleted(query);
-  }
-
-  @Get('reconciliation/supplier')
-  async getSupplierReconciliation(@Query() query: any) {
-    return this.deliveryService.getSupplierReconciliation(query);
-  }
-
-  @Get('reconciliation/supplier/detail')
-  async getSupplierDeliveryDetail(@Query() query: any) {
-    return this.deliveryService.getSupplierDeliveryDetail(query);
-  }
-
-  @Get('reconciliation/customer')
-  async getCustomerReconciliation(@Query() query: any) {
-    return this.deliveryService.getCustomerReconciliation(query);
-  }
-
-  @Get('reconciliation/customer/detail')
-  async getCustomerDeliveryDetail(@Query() query: any) {
-    return this.deliveryService.getCustomerDeliveryDetail(query);
-  }
-
   @Get()
-  async list(@Query() query: any) {
+  async findAll(@Query() query: any) {
     return this.deliveryService.findAll(query);
   }
 
   @Get(':id')
-  async getById(@Param('id') id: string) {
+  async findOne(@Param('id') id: string) {
     return this.deliveryService.findOne(+id);
   }
 
@@ -58,13 +28,28 @@ export class DeliveryController {
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string) {
+  async remove(@Param('id') id: string) {
     return this.deliveryService.remove(+id);
   }
 
-  @Post('restore/:id')
-  async restore(@Param('id') id: string) {
-    return this.deliveryService.restore(+id);
+  @Get('product-names/list')
+  async getProductNames() {
+    return this.deliveryService.getProductNames();
+  }
+
+  @Get('customers/list')
+  async getCustomerList() {
+    return this.deliveryService.getCustomerList();
+  }
+
+  @Get('suppliers/list')
+  async getSupplierList() {
+    return this.deliveryService.getSupplierList();
+  }
+
+  @Post('calculate-prices')
+  async calculatePrices(@Body() data: { supplierId: number; projectId: number; items: any[] }) {
+    return this.deliveryService.calculatePrices(data.supplierId, data.projectId, data.items);
   }
 
   @Post('import')
