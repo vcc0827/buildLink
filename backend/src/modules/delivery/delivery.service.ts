@@ -27,8 +27,8 @@ export class DeliveryService {
         take: pageSize,
         orderBy: { id: 'desc' },
         include: {
-          project: { select: { id: true, name: true } },
-          supplier: { select: { id: true, name: true } },
+          project: true,
+          supplier: true,
           items: true,
         },
       }),
@@ -49,8 +49,8 @@ export class DeliveryService {
     const order = await this.prisma.deliveryOrder.findUnique({
       where: { id },
       include: {
-        project: { select: { id: true, name: true } },
-        supplier: { select: { id: true, name: true } },
+        project: true,
+        supplier: true,
         items: true,
       },
     });
@@ -100,8 +100,8 @@ export class DeliveryService {
         } : undefined,
       },
       include: {
-        project: { select: { id: true, name: true } },
-        supplier: { select: { id: true, name: true } },
+        project: true,
+        supplier: true,
         items: true,
       },
     });
@@ -230,7 +230,7 @@ export class DeliveryService {
       // 从采购合同中查找价格
       for (const contract of purchaseContracts) {
         const contractItem = contract.items.find(
-          ci => ci.productName === productName || ci.product?.name === productName
+          ci => ci.productName === productName
         );
         if (contractItem && purchaseUnitPrice === 0) {
           purchaseUnitPrice = Number(contractItem.price);
@@ -241,7 +241,7 @@ export class DeliveryService {
       // 从销售合同中查找价格
       for (const contract of salesContracts) {
         const contractItem = contract.items.find(
-          ci => ci.productName === productName || ci.product?.name === productName
+          ci => ci.productName === productName
         );
         if (contractItem && salesUnitPrice === 0) {
           salesUnitPrice = Number(contractItem.price);

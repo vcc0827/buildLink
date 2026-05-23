@@ -50,11 +50,14 @@ export class StatementService {
     const no = `DZD-${type === 'upstream' ? 'UP' : 'DN'}-${period.replace('-', '')}-${Date.now().toString().slice(-4)}`;
 
     const deliveries = await this.prisma.deliveryOrder.findMany({
-      where: { productType: type === 'upstream' ? 'mortar' : 'block', customerId, status: 'delivered' },
-      include: { mortarItems: true, blockItems: true },
+      where: { 
+        [type === 'upstream' ? 'supplierId' : 'projectId']: customerId, 
+        status: 'confirmed' 
+      },
+      include: { items: true },
     });
 
-    const totalAmount = deliveries.reduce((sum: number, d: any) => sum + Number(d.totalAmount), 0);
+    const totalAmount = deliveries.reduce((sum: number, d: any) => sum + Number(type === 'upstream' ? d.purchaseTotal : d.salesTotal), 0);
 
     return this.prisma.statement.create({
       data: {
@@ -68,8 +71,8 @@ export class StatementService {
         items: deliveries.map((d: any) => ({
           deliveryOrderId: d.id,
           deliveryOrderNo: d.no,
-          deliveryDate: d.deliveryDate,
-          amount: d.totalAmount,
+          deliveryDate: d.date,
+          amount: type === 'upstream' ? d.purchaseTotal : d.salesTotal,
           invoicedAmount: 0,
           paidAmount: 0,
         })),
