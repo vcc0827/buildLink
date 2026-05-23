@@ -110,41 +110,21 @@ export interface ProductPriceHistory {
 export interface DeliveryOrder {
   id: number
   no: string
-  date: string
-  projectId: number
-  projectName: string
+  contractId?: number
+  contractNo?: string
   supplierId: number
   supplierName: string
-  region?: string
-  contractBelong?: string
-  salesman?: string
-  driver?: string
-  status: 'pending' | 'confirmed' | 'cancelled'
+  customerId: number
+  customerName: string
+  productType: 'mortar' | 'block'
+  deliveryDate: string
+  items: DeliveryOrderItem[]
+  totalAmount: number
+  status: 'pending' | 'delivered' | 'confirmed'
+  receiptUrl?: string
   remark?: string
-  purchaseTotal?: number
-  salesTotal?: number
-  items: DeliveryOrderItemNew[]
   createdAt: string
   updatedAt: string
-}
-
-export interface DeliveryOrderItemNew {
-  id?: number
-  deliveryOrderId?: number
-  productName: string
-  spec?: string
-  mortarTonnage?: number
-  packingType?: string
-  blockQuantity?: number
-  receivedQuantity?: number
-  cubicMeter?: number
-  purchaseUnitPrice: number
-  purchaseAmount: number
-  salesUnitPrice: number
-  salesAmount: number
-  frameTaken: number
-  frameReturned: number
-  remark?: string
 }
 
 export interface DeliveryOrderMortarItem {

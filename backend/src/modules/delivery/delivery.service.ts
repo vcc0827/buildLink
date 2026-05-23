@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -8,17 +8,11 @@ export class DeliveryService {
   async findAll(query: any) {
     const page = Number(query.page) || 1;
     const pageSize = Number(query.pageSize) || 10;
-    const { no, projectId, supplierId, date, productName, status } = query;
-    
+    const { no, productType, status } = query;
     const where: any = { deletedAt: null };
     if (no) where.no = { contains: no };
-    if (projectId) where.projectId = +projectId;
-    if (supplierId) where.supplierId = +supplierId;
+    if (productType) where.productType = productType;
     if (status) where.status = status;
-    if (date) where.date = { gte: new Date(date), lt: new Date(new Date(date).getTime() + 86400000) };
-    if (productName) {
-      where.items = { some: { productName: { contains: productName } } };
-    }
 
     const [list, total] = await Promise.all([
       this.prisma.deliveryOrder.findMany({
@@ -27,20 +21,28 @@ export class DeliveryService {
         take: pageSize,
         orderBy: { id: 'desc' },
         include: {
-          project: true,
-          supplier: true,
-          items: true,
+          supplier: { select: { id: true, name: true } },
+          customer: { select: { id: true, name: true } },
+          mortarItems: true,
+          blockItems: true,
         },
       }),
       this.prisma.deliveryOrder.count({ where }),
     ]);
 
-    const formatted = list.map((item: any) => ({
-      ...item,
-      projectName: item.project?.name,
-      supplierName: item.supplier?.name,
-      date: item.date,
-    }));
+    const formatted = list.map((item: any) => {
+      const items = item.productType === 'mortar' ? item.mortarItems : item.blockItems;
+      const primaryItem = items?.[0] || {};
+      return {
+        ...item,
+        supplierId: item.supplier?.id,
+        supplierName: item.supplier?.name,
+        customerId: item.customer?.id,
+        customerName: item.customer?.name,
+        items,
+        primaryItem,
+      };
+    });
 
     return { list: formatted, total, page, pageSize };
   }
@@ -49,306 +51,839 @@ export class DeliveryService {
     const order = await this.prisma.deliveryOrder.findUnique({
       where: { id },
       include: {
-        project: true,
-        supplier: true,
-        items: true,
+        supplier: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true } },
+        contract: { select: { id: true, no: true } },
+        mortarItems: { include: { product: { select: { id: true, name: true, spec: true } } } },
+        blockItems: { include: { product: { select: { id: true, name: true, spec: true } } } },
       },
     });
-
     if (!order) throw new NotFoundException('送货单不存在');
-
+    const items = order.productType === 'mortar' ? order.mortarItems : order.blockItems;
     return {
       ...order,
-      projectName: order.project?.name,
+      supplierId: order.supplier?.id,
       supplierName: order.supplier?.name,
+      customerId: order.customer?.id,
+      customerName: order.customer?.name,
+      contractId: order.contract?.id,
+      contractNo: order.contract?.no,
+      items,
     };
+  }
+
+  private validateAmount(quantity: number, price: number, amount: number): void {
+    const calculated = parseFloat((quantity * price).toFixed(2));
+    const diff = Math.abs(calculated - amount);
+    if (diff > 0.01) {
+      throw new BadRequestException(`金额验算失败：数量×单价=${calculated}，实际金额=${amount}，差异过大`);
+    }
+  }
+
+  private validateQuantity(quantity: number): void {
+    if (quantity < -9999.9999 || quantity > 9999.9999) {
+      throw new BadRequestException('数量超出允许范围（-9999.9999 ~ 9999.9999）');
+    }
   }
 
   async create(data: any) {
-    const { items, ...orderData } = data;
+    const no = `SHD-${Date.now()}`;
+    const { items, customerName, supplierName, contractItems, ...orderData } = data;
 
-    // 生成单号
-    const no = await this.generateNo();
+    if (!orderData.productType || !['mortar', 'block'].includes(orderData.productType)) {
+      throw new BadRequestException('产品类型必须是 mortar 或 block');
+    }
 
-    // 计算总金额（采购和销售的）
-    const purchaseTotal = items?.reduce((sum: number, item: any) => sum + Number(item.purchaseAmount || 0), 0) || 0;
-    const salesTotal = items?.reduce((sum: number, item: any) => sum + Number(item.salesAmount || 0), 0) || 0;
+    if (orderData.deliveryDate && typeof orderData.deliveryDate === 'string') {
+      orderData.deliveryDate = new Date(orderData.deliveryDate);
+    }
 
-    const order = await this.prisma.deliveryOrder.create({
-      data: {
-        ...orderData,
-        no,
-        purchaseTotal,
-        salesTotal,
-        items: items ? {
-          create: items.map((item: any) => ({
-            productName: item.productName,
-            spec: item.spec || '',
-            mortarTonnage: item.mortarTonnage ? Number(item.mortarTonnage) : null,
+    const totalAmount = items?.reduce((sum: number, item: any) => sum + parseFloat(item.amount || 0), 0) || 0;
+
+    const createData: any = {
+      no,
+      totalAmount,
+      productType: orderData.productType,
+      deliveryDate: orderData.deliveryDate,
+      status: orderData.status || 'pending',
+      remark: orderData.remark || '',
+      supplier: { connect: { id: orderData.supplierId } },
+      customer: { connect: { id: orderData.customerId } },
+    };
+
+    if (orderData.contractId) {
+      createData.contract = { connect: { id: orderData.contractId } };
+    }
+
+    const itemField = orderData.productType === 'mortar' ? 'mortarItems' : 'blockItems';
+    createData[itemField] = {
+      create: items?.map((item: any) => {
+        this.validateQuantity(item.quantity);
+        if (orderData.productType === 'mortar') {
+          this.validateAmount(item.quantity, item.price, item.amount);
+          return {
+            quantity: item.quantity,
+            price: item.price,
+            amount: item.amount,
+            mortarGrade: item.mortarGrade || '',
             packingType: item.packingType || '',
-            blockQuantity: item.blockQuantity ? Number(item.blockQuantity) : null,
-            receivedQuantity: item.receivedQuantity ? Number(item.receivedQuantity) : null,
-            cubicMeter: item.cubicMeter ? Number(item.cubicMeter) : null,
-            purchaseUnitPrice: Number(item.purchaseUnitPrice || 0),
-            purchaseAmount: Number(item.purchaseAmount || 0),
-            salesUnitPrice: Number(item.salesUnitPrice || 0),
-            salesAmount: Number(item.salesAmount || 0),
-            frameTaken: Number(item.frameTaken || 0),
-            frameReturned: Number(item.frameReturned || 0),
-            remark: item.remark || '',
-          })),
-        } : undefined,
-      },
+            licensePlate: item.licensePlate || '',
+            ...(item.productId ? { product: { connect: { id: item.productId } } } : {}),
+          };
+        } else {
+          this.validateAmount(item.convertedCubic, item.price, item.amount);
+          return {
+            quantity: item.quantity,
+            price: item.price,
+            amount: item.amount,
+            convertedCubic: item.convertedCubic || 0,
+            frameTaken: item.frameTaken || 0,
+            frameReturned: item.frameReturned || 0,
+            remarks: item.remarks || '',
+            ...(item.productId ? { product: { connect: { id: item.productId } } } : {}),
+          };
+        }
+      }) || [],
+    };
+
+    return this.prisma.deliveryOrder.create({
+      data: createData as any,
       include: {
-        project: true,
-        supplier: true,
-        items: true,
+        mortarItems: true,
+        blockItems: true,
       },
     });
-
-    return {
-      ...order,
-      projectName: order.project?.name,
-      supplierName: order.supplier?.name,
-    };
   }
 
   async update(id: number, data: any) {
-    const { items, ...orderData } = data;
+    const existing = await this.findOne(id);
+    const { items, customerName, supplierName, contractItems, ...orderData } = data;
 
-    // 检查送货单是否存在
-    const existing = await this.prisma.deliveryOrder.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('送货单不存在');
-
-    // 计算总金额
-    const purchaseTotal = items?.reduce((sum: number, item: any) => sum + Number(item.purchaseAmount || 0), 0) || 0;
-    const salesTotal = items?.reduce((sum: number, item: any) => sum + Number(item.salesAmount || 0), 0) || 0;
-
-    // 更新主表
-    const order = await this.prisma.deliveryOrder.update({
-      where: { id },
-      data: {
-        ...orderData,
-        purchaseTotal,
-        salesTotal,
-      },
-    });
-
-    // 更新明细表
-    if (items) {
-      // 删除旧明细
-      await this.prisma.deliveryOrderItem.deleteMany({
-        where: { deliveryOrderId: id },
-      });
-
-      // 创建新明细
-      await this.prisma.deliveryOrderItem.createMany({
-        data: items.map((item: any) => ({
-          deliveryOrderId: id,
-          productName: item.productName,
-          spec: item.spec || '',
-          mortarTonnage: item.mortarTonnage ? Number(item.mortarTonnage) : null,
-          packingType: item.packingType || '',
-          blockQuantity: item.blockQuantity ? Number(item.blockQuantity) : null,
-          receivedQuantity: item.receivedQuantity ? Number(item.receivedQuantity) : null,
-          cubicMeter: item.cubicMeter ? Number(item.cubicMeter) : null,
-          purchaseUnitPrice: Number(item.purchaseUnitPrice || 0),
-          purchaseAmount: Number(item.purchaseAmount || 0),
-          salesUnitPrice: Number(item.salesUnitPrice || 0),
-          salesAmount: Number(item.salesAmount || 0),
-          frameTaken: Number(item.frameTaken || 0),
-          frameReturned: Number(item.frameReturned || 0),
-          remark: item.remark || '',
-        })),
-      });
+    if (orderData.productType && !['mortar', 'block'].includes(orderData.productType)) {
+      throw new BadRequestException('产品类型必须是 mortar 或 block');
     }
 
-    return this.findOne(id);
+    if (orderData.deliveryDate && typeof orderData.deliveryDate === 'string') {
+      orderData.deliveryDate = new Date(orderData.deliveryDate);
+    }
+
+    const updateData: any = {
+      productType: orderData.productType,
+      deliveryDate: orderData.deliveryDate,
+      status: orderData.status,
+      remark: orderData.remark,
+      supplier: { connect: { id: orderData.supplierId } },
+      customer: { connect: { id: orderData.customerId } },
+    };
+
+    if (orderData.contractId) {
+      updateData.contract = { connect: { id: orderData.contractId } };
+    }
+
+    if (items) {
+      const totalAmount = items.reduce((sum: number, item: any) => sum + parseFloat(item.amount || 0), 0);
+      updateData.totalAmount = totalAmount;
+
+      const productType = existing.productType;
+      if (productType === 'mortar') {
+        await this.prisma.deliveryOrderMortar.deleteMany({ where: { deliveryOrderId: id } });
+      } else {
+        await this.prisma.deliveryOrderBlock.deleteMany({ where: { deliveryOrderId: id } });
+      }
+
+      const itemField = productType === 'mortar' ? 'mortarItems' : 'blockItems';
+      updateData[itemField] = {
+        create: items.map((item: any) => {
+          this.validateQuantity(item.quantity);
+          if (productType === 'mortar') {
+            this.validateAmount(item.quantity, item.price, item.amount);
+            return {
+              quantity: item.quantity,
+              price: item.price,
+              amount: item.amount,
+              mortarGrade: item.mortarGrade || '',
+              packingType: item.packingType || '',
+              licensePlate: item.licensePlate || '',
+              ...(item.productId ? { product: { connect: { id: item.productId } } } : {}),
+            };
+          } else {
+            this.validateAmount(item.convertedCubic, item.price, item.amount);
+            return {
+              quantity: item.quantity,
+              price: item.price,
+              amount: item.amount,
+              convertedCubic: item.convertedCubic || 0,
+              frameTaken: item.frameTaken || 0,
+              frameReturned: item.frameReturned || 0,
+              remarks: item.remarks || '',
+              ...(item.productId ? { product: { connect: { id: item.productId } } } : {}),
+            };
+          }
+        }),
+      };
+    }
+
+    return this.prisma.deliveryOrder.update({
+      where: { id },
+      data: updateData as any,
+      include: {
+        mortarItems: true,
+        blockItems: true,
+      },
+    });
   }
 
   async remove(id: number) {
-    await this.prisma.deliveryOrder.update({
+    if (!id || isNaN(id)) throw new BadRequestException('无效的送货单ID');
+    return this.prisma.deliveryOrder.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
-    return { message: '删除成功' };
   }
 
-  async getProductNames() {
-    const items = await this.prisma.deliveryOrderItem.findMany({
-      where: { productName: { not: null } },
-      select: { productName: true },
-      distinct: ['productName'],
+  async restore(id: number) {
+    if (!id || isNaN(id)) throw new BadRequestException('无效的送货单ID');
+    const order = await this.prisma.deliveryOrder.findUnique({ where: { id } });
+    if (!order) throw new NotFoundException('送货单不存在');
+    if (!order.deletedAt) throw new BadRequestException('该送货单未被删除，无需恢复');
+    return this.prisma.deliveryOrder.update({
+      where: { id },
+      data: { deletedAt: null },
     });
-    return items.map(item => item.productName).filter(Boolean).sort();
   }
 
-  async getCustomerList() {
-    const customers = await this.prisma.customer.findMany({
-      where: { type: 'project', status: 'active' },
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
-    return customers;
-  }
+  async getDeleted(query: any) {
+    const page = Number(query.page) || 1;
+    const pageSize = Number(query.pageSize) || 10;
+    const where: any = { deletedAt: { not: null } };
 
-  async getSupplierList() {
-    const suppliers = await this.prisma.customer.findMany({
-      where: { type: 'supplier', status: 'active' },
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
-    return suppliers;
-  }
+    const [list, total] = await Promise.all([
+      this.prisma.deliveryOrder.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { deletedAt: 'desc' },
+        include: {
+          supplier: { select: { id: true, name: true } },
+          customer: { select: { id: true, name: true } },
+          mortarItems: true,
+          blockItems: true,
+        },
+      }),
+      this.prisma.deliveryOrder.count({ where }),
+    ]);
 
-  async calculatePrices(supplierId: number, projectId: number, items: any[]) {
-    // 获取供应商的采购合同
-    const purchaseContracts = await this.prisma.contract.findMany({
-      where: {
-        reconciliationUnitId: supplierId,
-        type: 'upstream',
-        status: 'active',
-      },
-      include: { items: true },
-    });
-
-    // 获取项目的销售合同
-    const salesContracts = await this.prisma.contract.findMany({
-      where: {
-        reconciliationUnitId: projectId,
-        type: 'downstream',
-        status: 'active',
-      },
-      include: { items: true },
-    });
-
-    const result = items.map((item: any) => {
-      const productName = item.productName;
-      let purchaseUnitPrice = Number(item.purchaseUnitPrice || 0);
-      let salesUnitPrice = Number(item.salesUnitPrice || 0);
-
-      // 从采购合同中查找价格
-      for (const contract of purchaseContracts) {
-        const contractItem = contract.items.find(
-          ci => ci.productName === productName
-        );
-        if (contractItem && purchaseUnitPrice === 0) {
-          purchaseUnitPrice = Number(contractItem.price);
-          break;
-        }
-      }
-
-      // 从销售合同中查找价格
-      for (const contract of salesContracts) {
-        const contractItem = contract.items.find(
-          ci => ci.productName === productName
-        );
-        if (contractItem && salesUnitPrice === 0) {
-          salesUnitPrice = Number(contractItem.price);
-          break;
-        }
-      }
-
+    const formatted = list.map((item: any) => {
+      const items = item.productType === 'mortar' ? item.mortarItems : item.blockItems;
       return {
         ...item,
-        purchaseUnitPrice,
-        salesUnitPrice,
+        supplierId: item.supplier?.id,
+        supplierName: item.supplier?.name,
+        customerId: item.customer?.id,
+        customerName: item.customer?.name,
+        items,
       };
     });
 
-    return result;
+    return { list: formatted, total, page, pageSize };
   }
 
-  async importDeliveryOrders(data: any) {
-    const { rows, customerMappings, supplierMappings } = data;
-    const errors: any[] = [];
-    const success: any[] = [];
+  async importDeliveryOrders(data: { productType: string; rows: any[] }) {
+    const { productType, rows } = data;
+    const errors: { row: number; message: string; data: any }[] = [];
+    const results: { success: number; failed: number; errors: any[] } = { success: 0, failed: 0, errors: [] };
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      const rowNum = i + 2;
+
+      const no = row.no || row['送货单号'] || row['送货单号'.trim()];
+      const supplierName = row.supplierName || row['供货单位'] || row['供货单位'.trim()];
+      const customerName = row.customerName || row['项目名称'] || row['项目名称'.trim()];
+
       try {
-        // 匹配项目
-        const projectName = row['送货单位'] || row['送货单位名称'];
-        const project = customerMappings.find((c: any) => c.name === projectName);
-        if (!project) {
-          errors.push({ row: i + 2, message: `未找到项目: ${projectName}` });
+        if (!no || !supplierName || !customerName) {
+          errors.push({ row: rowNum, message: '必填字段缺失：送货单号/供货单位/项目名称', data: row });
           continue;
         }
 
-        // 匹配供应商
-        const supplierName = row['供应商'];
-        const supplier = supplierMappings.find((s: any) => s.name === supplierName);
-        if (!supplier) {
-          errors.push({ row: i + 2, message: `未找到供应商: ${supplierName}` });
-          continue;
-        }
+        const allSuppliers = await this.prisma.customer.findMany({
+        where: { type: 'supplier' }
+      });
+      const supplier = allSuppliers.find(s =>
+        s.name.includes(supplierName) || supplierName.includes(s.name)
+      );
+      if (!supplier) {
+        errors.push({ row: rowNum, message: `供货单位「${supplierName}」不存在`, data: row });
+        continue;
+      }
 
-        // 创建送货单
-        const order = await this.create({
-          date: new Date(row['日期'] || new Date()),
-          projectId: project.id,
-          supplierId: supplier.id,
-          region: row['所属区域'] || '',
-          contractBelong: row['合同归属'] || '',
-          salesman: row['业务员'] || '',
-          driver: row['驾驶员'] || '',
-          status: 'pending',
-          remark: row['备注'] || '',
-          items: [{
-            productName: row['品名'] || '',
-            spec: row['规格型号'] || '',
-            mortarTonnage: row['砂浆送货吨数'] ? Number(row['砂浆送货吨数']) : null,
-            packingType: row['砂浆散装/包装'] === '袋包' ? 'bagged' : 'bulk',
-            blockQuantity: row['砌块送货数量'] ? Number(row['砌块送货数量']) : null,
-            receivedQuantity: row['砌块实收数量'] ? Number(row['砌块实收数量']) : null,
-            cubicMeter: row['折立方'] ? Number(row['折立方']) : null,
-            purchaseUnitPrice: row['供应商单价'] ? Number(row['供应商单价']) : 0,
-            purchaseAmount: row['供应商金额'] ? Number(row['供应商金额']) : 0,
-            salesUnitPrice: row['单价'] ? Number(row['单价']) : 0,
-            salesAmount: row['金额（元）'] ? Number(row['金额（元）']) : 0,
-            frameTaken: row['带去铁架'] ? Number(row['带去铁架']) : 0,
-            frameReturned: row['带回铁架'] ? Number(row['带回铁架']) : 0,
-          }],
+      const allCustomers = await this.prisma.customer.findMany({
+        where: { type: 'project' }
+      });
+      const customer = allCustomers.find(c => {
+        const dbName = c.name;
+        const importName = customerName;
+        if (dbName.includes(importName) || importName.includes(dbName)) return true;
+        const dbChars = dbName.replace(/\s+/g, '');
+        const importChars = importName.replace(/\s+/g, '');
+        if (dbChars.includes(importChars) || importChars.includes(dbChars)) return true;
+        const importLen = importChars.length;
+        const matchChars = [...importChars].filter(ch => dbChars.includes(ch)).length;
+        return matchChars >= Math.min(4, importLen * 0.6);
+      });
+      if (!customer) {
+        errors.push({ row: rowNum, message: `项目「${customerName}」不存在`, data: row });
+        continue;
+      }
+
+        const contract = await this.prisma.contract.findFirst({
+          where: {
+            reconciliationUnitId: customer.id,
+            status: { in: ['active'] }
+          }
         });
+        if (!contract) {
+          errors.push({ row: rowNum, message: `项目「${customerName}」没有对应的${productType === 'mortar' ? '下游' : '上游'}合同`, data: row });
+          continue;
+        }
 
-        success.push(order);
-      } catch (error: any) {
-        errors.push({ row: i + 2, message: error.message });
+        const existingOrder = await this.prisma.deliveryOrder.findUnique({ where: { no } });
+        if (existingOrder) {
+          errors.push({ row: rowNum, message: `送货单号「${no}」已存在`, data: row });
+          continue;
+        }
+
+        const quantity = parseFloat(row.quantity) || 0;
+        const price = parseFloat(row.price) || 0;
+        const amount = parseFloat(row.amount) || 0;
+        const calculatedAmount = parseFloat((quantity * price).toFixed(2));
+
+        if (Math.abs(calculatedAmount - amount) > 0.01) {
+          errors.push({ row: rowNum, message: `金额验算失败：数量×单价=${calculatedAmount}，实际金额=${amount}`, data: row });
+          continue;
+        }
+
+        const deliveryDateStr = row.deliveryDate || row['送货日期'] || '';
+        const deliveryDate = new Date(deliveryDateStr);
+        if (isNaN(deliveryDate.getTime())) {
+          errors.push({ row: rowNum, message: `送货日期「${deliveryDateStr}」无效`, data: row });
+          continue;
+        }
+
+        if (productType === 'mortar') {
+          await this.prisma.deliveryOrder.create({
+            data: {
+              no,
+              contractId: contract.id,
+              supplierId: supplier.id,
+              customerId: customer.id,
+              productType: 'mortar',
+              deliveryDate,
+              totalAmount: amount,
+              status: 'pending',
+              remark: row.remark || '',
+              mortarItems: {
+                create: {
+                  productId: null,
+                  quantity,
+                  price,
+                  amount,
+                  mortarGrade: row.mortarGrade || '',
+                  packingType: row.packingType === '袋包' ? 'bagged' : 'bulk',
+                  licensePlate: row.licensePlate || ''
+                }
+              }
+            }
+          });
+        } else {
+          const convertedCubic = parseFloat(row.convertedCubic) || 0;
+          const frameTaken = parseInt(row.frameTaken) || 0;
+          const frameReturned = parseInt(row.frameReturned) || 0;
+
+          await this.prisma.deliveryOrder.create({
+            data: {
+              no,
+              contractId: contract.id,
+              supplierId: supplier.id,
+              customerId: customer.id,
+              productType: 'block',
+              deliveryDate,
+              totalAmount: amount,
+              status: 'pending',
+              remark: row.remark || '',
+              blockItems: {
+                create: {
+                  productId: null,
+                  quantity,
+                  convertedCubic,
+                  price,
+                  amount,
+                  frameTaken,
+                  frameReturned,
+                  remarks: row.remarks || ''
+                }
+              }
+            }
+          });
+        }
+      } catch (e) {
+        errors.push({ row: rowNum, message: `处理失败：${e.message}`, data: row });
       }
     }
 
-    return {
-      success: success.length,
-      failed: errors.length,
-      errors,
-    };
-  }
-
-  private async generateNo() {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    const prefix = `SH${year}-${month}-${day}-`;
-
-    // 查找今天最大的序号
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-
-    const lastOrder = await this.prisma.deliveryOrder.findFirst({
-      where: {
-        no: { startsWith: prefix },
-        createdAt: { gte: startOfDay, lt: endOfDay },
-      },
-      orderBy: { no: 'desc' },
-    });
-
-    let sequence = 1;
-    if (lastOrder) {
-      const lastSeq = parseInt(lastOrder.no.split('-').pop() || '0');
-      sequence = lastSeq + 1;
+    if (errors.length > 0) {
+      results.failed = errors.length;
+      results.errors = errors;
+      return results;
     }
 
-    return `${prefix}${sequence}`;
+    results.success = rows.length;
+    return results;
+  }
+
+  async getSupplierReconciliation(query: any) {
+    const page = Number(query.page) || 1;
+    const pageSize = Number(query.pageSize) || 10;
+    const { supplierId, startDate, endDate } = query;
+
+    const where: any = {
+      deliveryDate: {
+        gte: new Date(startDate),
+        lte: new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1),
+      },
+    };
+
+    if (supplierId) {
+      where.supplierId = Number(supplierId);
+    }
+
+    const deliveryOrders = await this.prisma.deliveryOrder.findMany({
+      where,
+      include: {
+        supplier: { select: { id: true, name: true } },
+        mortarItems: { include: { product: { select: { spec: true } } } },
+        blockItems: { include: { product: { select: { spec: true } } } },
+      },
+    });
+
+    const blockSupplierIds = [...new Set(deliveryOrders.filter(o => o.productType === 'block').map(o => o.supplierId))];
+    const contracts = blockSupplierIds.length > 0 ? await this.prisma.contract.findMany({
+      where: {
+        reconciliationUnitId: { in: blockSupplierIds },
+        status: { in: ['active'] },
+      },
+      include: {
+        items: { select: { spec: true, price: true } },
+      },
+    }) : [];
+
+    const contractPriceMap: Record<string, Record<string, number>> = {};
+    contracts.forEach((contract) => {
+      const key = contract.reconciliationUnitId?.toString() || '';
+      if (!contractPriceMap[key]) {
+        contractPriceMap[key] = {};
+      }
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[key][item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
+    });
+
+    const grouped: Record<number, { supplierId: number; supplierName: string; productType: string; totalQuantity: number; totalAmount: number; deliveryCount: number }> = {};
+
+    deliveryOrders.forEach((order) => {
+      const key = `${order.supplierId}-${order.productType}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          supplierId: order.supplierId,
+          supplierName: order.supplier?.name || '',
+          productType: order.productType,
+          totalQuantity: 0,
+          totalAmount: 0,
+          deliveryCount: 0,
+        };
+      }
+
+      const items = order.productType === 'mortar' ? order.mortarItems : order.blockItems;
+      items.forEach((item: any) => {
+        grouped[key].totalQuantity += parseFloat(item.quantity || 0);
+        
+        if (order.productType === 'mortar') {
+          grouped[key].totalAmount += parseFloat(item.amount || 0);
+        } else {
+          const spec = item.product?.spec || '';
+          const supplierPrices = contractPriceMap[order.supplierId] || {};
+          const contractPrice = supplierPrices[spec] || parseFloat(item.price || 0);
+          const convertedCubic = parseFloat(item.convertedCubic || 0);
+          grouped[key].totalAmount += convertedCubic * contractPrice;
+        }
+      });
+      grouped[key].deliveryCount++;
+    });
+
+    const list = Object.values(grouped).map((item) => ({
+      ...item,
+      totalQuantity: parseFloat(item.totalQuantity.toFixed(4)),
+      totalAmount: parseFloat(item.totalAmount.toFixed(2)),
+      status: 'unreconciled' as const,
+    }));
+
+    list.sort((a, b) => b.totalAmount - a.totalAmount);
+
+    const total = list.length;
+    const paginatedList = list.slice((page - 1) * pageSize, page * pageSize);
+
+    return { list: paginatedList, total, page, pageSize };
+  }
+
+  async getSupplierDeliveryDetail(query: any) {
+    const { supplierId, startDate, endDate, productType } = query;
+
+    const where: any = {
+      supplierId: Number(supplierId),
+      deliveryDate: {
+        gte: new Date(startDate),
+        lte: new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1),
+      },
+    };
+
+    if (productType) {
+      where.productType = productType;
+    }
+
+    const deliveryOrders = await this.prisma.deliveryOrder.findMany({
+      where,
+      include: {
+        supplier: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true } },
+        mortarItems: { include: { product: { select: { id: true, name: true, spec: true } } } },
+        blockItems: { include: { product: { select: { id: true, name: true, spec: true } } } },
+      },
+      orderBy: { deliveryDate: 'asc' },
+    });
+
+    console.log('=== 合同查询日志 ===');
+    console.log('supplierId:', supplierId);
+
+    const supplier = await this.prisma.customer.findUnique({
+      where: { id: Number(supplierId) },
+      select: { id: true, name: true },
+    });
+    console.log('厂家信息:', supplier);
+
+    const contracts = await this.prisma.contract.findMany({
+      where: {
+        reconciliationUnitId: Number(supplierId),
+        status: { in: ['active'] },
+      },
+      include: {
+        items: { select: { spec: true, price: true } },
+      },
+    });
+
+    console.log('查询到的合同数量:', contracts.length);
+    contracts.forEach((contract, index) => {
+      console.log(`合同${index + 1}: no=${contract.no}, id=${contract.id}, status=${contract.status}`);
+      if (contract.items) {
+        console.log(`合同项目:`);
+        contract.items.forEach((item) => {
+          console.log(`  - spec="${item.spec}", price=${item.price}`);
+        });
+      }
+    });
+
+    if (contracts.length === 0) {
+      console.log('警告：未找到合同...');
+    }
+
+    const contractPriceMap: Record<string, number> = {};
+    contracts.forEach((contract) => {
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
+    });
+
+    console.log('构建的价格映射:', contractPriceMap);
+
+    const list: any[] = [];
+
+    deliveryOrders.forEach((order) => {
+      const items = order.productType === 'mortar' ? order.mortarItems : order.blockItems;
+
+      items.forEach((item: any) => {
+        if (order.productType === 'mortar') {
+          list.push({
+            deliveryDate: order.deliveryDate.toISOString().split('T')[0],
+            deliveryMethod: item.packingType === 'bulk' ? '散装' : '袋装',
+            deliveryNo: order.no,
+            spec: item.product?.spec || '',
+            type: '砂浆',
+            quantity: parseFloat(item.quantity || 0).toFixed(4),
+            receivedQuantity: parseFloat(item.quantity || 0).toFixed(4),
+            deduction: '0',
+            convertedCubic: '0',
+            amount: parseFloat(item.amount || 0).toFixed(2),
+            remark: order.remark || '',
+            customerName: order.customer?.name || '',
+            mortarGrade: item.mortarGrade || '',
+            packingType: item.packingType || '',
+            price: parseFloat(item.price || 0).toFixed(2),
+          });
+        } else {
+          const spec = item.product?.spec || '';
+          const foundInContract = spec in contractPriceMap;
+          const contractPrice = foundInContract ? contractPriceMap[spec] : parseFloat(item.price || 0);
+          const convertedCubic = parseFloat(item.convertedCubic || 0);
+          const calculatedAmount = (convertedCubic * contractPrice).toFixed(2);
+
+          console.log(`处理送货单 ${order.no}, 规格: "${spec}"`);
+          console.log(`  - 在合同中找到: ${foundInContract}`);
+          console.log(`  - 合同单价: ${foundInContract ? contractPriceMap[spec] : '未找到'}`);
+          console.log(`  - 送货单单价: ${item.price}`);
+          console.log(`  - 使用的单价: ${contractPrice}`);
+
+          list.push({
+            deliveryDate: order.deliveryDate.toISOString().split('T')[0],
+            deliveryMethod: '厂家直送',
+            deliveryNo: order.no,
+            spec,
+            type: 'S',
+            quantity: parseFloat(item.quantity || 0).toFixed(4),
+            receivedQuantity: parseFloat(item.quantity || 0).toFixed(4),
+            deduction: '0',
+            convertedCubic: convertedCubic.toFixed(4),
+            contractPrice: contractPrice.toFixed(2),
+            amount: calculatedAmount,
+            remark: item.remarks || '',
+          });
+        }
+      });
+    });
+
+    return { list };
+  }
+
+  async getCustomerReconciliation(query: any) {
+    const page = Number(query.page) || 1;
+    const pageSize = Number(query.pageSize) || 10;
+    const { customerId, startDate, endDate } = query;
+
+    const where: any = {
+      deliveryDate: {
+        gte: new Date(startDate),
+        lte: new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1),
+      },
+    };
+
+    if (customerId) {
+      where.customerId = Number(customerId);
+    }
+
+    const deliveryOrders = await this.prisma.deliveryOrder.findMany({
+      where,
+      include: {
+        customer: { select: { id: true, name: true } },
+        mortarItems: { include: { product: { select: { spec: true } } } },
+        blockItems: { include: { product: { select: { spec: true } } } },
+      },
+    });
+
+    const customerIds = [...new Set(deliveryOrders.map(o => o.customerId))];
+    const contracts = customerIds.length > 0 ? await this.prisma.contract.findMany({
+      where: {
+        reconciliationUnitId: { in: customerIds },
+        status: { in: ['active'] },
+      },
+      include: {
+        items: { select: { spec: true, price: true } },
+      },
+    }) : [];
+
+    const contractPriceMap: Record<string, Record<string, number>> = {};
+    contracts.forEach((contract) => {
+      const key = contract.reconciliationUnitId?.toString() || '';
+      if (!contractPriceMap[key]) {
+        contractPriceMap[key] = {};
+      }
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[key][item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
+    });
+
+    const grouped: Record<string, { customerId: number; customerName: string; productType: string; totalQuantity: number; totalAmount: number; deliveryCount: number }> = {};
+
+    deliveryOrders.forEach((order) => {
+      const key = `${order.customerId}-${order.productType}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          customerId: order.customerId,
+          customerName: order.customer?.name || '',
+          productType: order.productType,
+          totalQuantity: 0,
+          totalAmount: 0,
+          deliveryCount: 0,
+        };
+      }
+
+      const items = order.productType === 'mortar' ? order.mortarItems : order.blockItems;
+      items.forEach((item: any) => {
+        grouped[key].totalQuantity += parseFloat(item.quantity || 0);
+        
+        if (order.productType === 'mortar') {
+          const spec = item.product?.spec || '';
+          const customerPrices = contractPriceMap[order.customerId] || {};
+          const contractPrice = customerPrices[spec] || parseFloat(item.price || 0);
+          grouped[key].totalAmount += parseFloat(item.quantity || 0) * contractPrice;
+        } else {
+          const spec = item.product?.spec || '';
+          const customerPrices = contractPriceMap[order.customerId] || {};
+          const contractPrice = customerPrices[spec] || parseFloat(item.price || 0);
+          const convertedCubic = parseFloat(item.convertedCubic || 0);
+          grouped[key].totalAmount += convertedCubic * contractPrice;
+        }
+      });
+      grouped[key].deliveryCount++;
+    });
+
+    const list = Object.values(grouped).map((item) => ({
+      ...item,
+      totalQuantity: parseFloat(item.totalQuantity.toFixed(4)),
+      totalAmount: parseFloat(item.totalAmount.toFixed(2)),
+      status: 'unreconciled' as const,
+    }));
+
+    list.sort((a, b) => b.totalAmount - a.totalAmount);
+
+    const total = list.length;
+    const paginatedList = list.slice((page - 1) * pageSize, page * pageSize);
+
+    return { list: paginatedList, total, page, pageSize };
+  }
+
+  async getCustomerDeliveryDetail(query: any) {
+    const { customerId, startDate, endDate, productType } = query;
+
+    const where: any = {
+      customerId: Number(customerId),
+      deliveryDate: {
+        gte: new Date(startDate),
+        lte: new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1),
+      },
+    };
+
+    if (productType) {
+      where.productType = productType;
+    }
+
+    const deliveryOrders = await this.prisma.deliveryOrder.findMany({
+      where,
+      include: {
+        supplier: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true } },
+        mortarItems: { include: { product: { select: { id: true, name: true, spec: true } } } },
+        blockItems: { include: { product: { select: { id: true, name: true, spec: true } } } },
+      },
+      orderBy: { deliveryDate: 'asc' },
+    });
+
+    const contracts = await this.prisma.contract.findMany({
+      where: {
+        reconciliationUnitId: Number(customerId),
+        status: { in: ['active'] },
+      },
+      include: {
+        items: { select: { spec: true, price: true } },
+      },
+    });
+
+    const contractPriceMap: Record<string, number> = {};
+    contracts.forEach((contract) => {
+      if (contract.items) {
+        contract.items.forEach((item) => {
+          if (item.spec) {
+            contractPriceMap[item.spec] = parseFloat(item.price.toString());
+          }
+        });
+      }
+    });
+
+    const list: any[] = [];
+    let totalQuantity = 0;
+    let totalAmount = 0;
+    let totalDeductVolume = 0;
+    let totalConvertedCubic = 0;
+
+    deliveryOrders.forEach((order) => {
+      const items = order.productType === 'mortar' ? order.mortarItems : order.blockItems;
+      
+      items.forEach((item: any) => {
+        const spec = item.product?.spec || '';
+        const contractPrice = contractPriceMap[spec] || parseFloat(item.price || 0);
+        
+        if (order.productType === 'mortar') {
+          const quantity = parseFloat(item.quantity || 0);
+          const calculatedAmount = (quantity * contractPrice).toFixed(2);
+          
+          list.push({
+            deliveryDate: order.deliveryDate.toISOString().split('T')[0],
+            supplierName: order.supplier?.name || '',
+            mortarGrade: item.mortarGrade || '',
+            packingType: item.packingType || '',
+            quantity: quantity.toFixed(4),
+            contractPrice: contractPrice.toFixed(2),
+            amount: calculatedAmount,
+          });
+          
+          totalQuantity += quantity;
+          totalAmount += parseFloat(calculatedAmount);
+        } else {
+          const convertedCubic = parseFloat(item.convertedCubic || 0);
+          const calculatedAmount = (convertedCubic * contractPrice).toFixed(2);
+          
+          list.push({
+            deliveryDate: order.deliveryDate.toISOString().split('T')[0],
+            deliveryMethod: '厂家直送',
+            deliveryNo: order.no,
+            spec,
+            type: 'S',
+            quantity: parseFloat(item.quantity || 0).toFixed(4),
+            receivedQuantity: parseFloat(item.quantity || 0).toFixed(4),
+            deduction: '0',
+            convertedCubic: convertedCubic.toFixed(4),
+            contractPrice: contractPrice.toFixed(2),
+            amount: calculatedAmount,
+            remark: item.remarks || '',
+          });
+          
+          totalQuantity += parseFloat(item.quantity || 0);
+          totalAmount += parseFloat(calculatedAmount);
+          totalConvertedCubic += convertedCubic;
+        }
+      });
+    });
+
+    return { 
+      list, 
+      customerName: deliveryOrders[0]?.customer?.name || '',
+      productType: deliveryOrders[0]?.productType || '',
+      totals: {
+        totalQuantity: parseFloat(totalQuantity.toFixed(4)),
+        totalAmount: parseFloat(totalAmount.toFixed(2)),
+        deductVolume: parseFloat(totalDeductVolume.toFixed(4)),
+        convertedCubic: parseFloat(totalConvertedCubic.toFixed(4)),
+      }
+    };
   }
 }

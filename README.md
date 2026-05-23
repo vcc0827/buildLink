@@ -82,9 +82,9 @@ npm run dev
 - 对账单位管理（下游客户信息）
 - 产品管理（商品品类管理）
 - 合同管理
-- 送货单管理
-- 上游对账
-- 下游对账
+- 送货单管理（支持砂浆、蒸压加气混凝土砌块两种类型）
+- 上游对账（与厂家对账）
+- 下游对账（与项目对账）
 
 ### 财务模块
 - 库存管理（入库/出库）
@@ -92,6 +92,29 @@ npm run dev
 - 收付款管理
 - 往来核销
 - 数据报表
+
+---
+
+## 核心功能特性
+
+### 送货单管理
+- **产品类型支持**：砂浆（mortar）、蒸压加气混凝土砌块（block）
+- **明细管理**：支持多产品明细录入
+- **金额验算**：自动校验数量×单价=金额
+- **导入功能**：支持批量导入送货单数据
+- **回收站**：软删除机制，支持恢复已删除单据
+
+### 上游对账
+- 按厂家汇总送货数据
+- 支持按日期范围查询
+- 自动计算合同单价金额
+- 区分砂浆/砌块产品类型
+
+### 下游对账
+- 按项目汇总送货数据
+- 支持按日期范围查询
+- 自动计算合同单价金额
+- 生成对账单明细
 
 ---
 
@@ -104,25 +127,32 @@ npm run dev
 | `users` | 用户表 | id, username, password, role, status |
 | `customers` | 客户表（厂家/项目） | id, name, type(supplier/manufacturer/project), category, contact, phone, reconciliationUnitId |
 | `reconciliation_units` | 对账单位表 | id, companyName, projectName, taxNumber, address, phone, contact, bankName, bankAccount, bankCode |
-| `products` | 产品表 | id, name, category, spec, unit, price |
-| `contracts` | 合同表 | id, customerId, productId, unitPrice, quantity, amount, startDate, endDate |
-| `delivery_orders` | 送货单表 | id, supplierId, customerId, productId, quantity, price, amount, deliveryDate |
-| `stock_records` | 库存记录表 | id, productId, type(in/out), quantity, price, amount, buyerId, sellerId, invoiceNo |
+| `products` | 产品表 | id, name, category, spec, unit, price, pricingType |
+| `contracts` | 合同表 | id, no, name, reconciliationUnitId, type, signedDate, status |
+| `contract_items` | 合同明细表 | id, contractId, productId, productName, basePrice, adjustmentType, adjustmentValue, price |
+| `delivery_orders` | 送货单表 | id, no, supplierId, customerId, productType, deliveryDate, totalAmount |
+| `delivery_order_mortar` | 砂浆送货明细表 | id, deliveryOrderId, productId, quantity, price, amount, mortarGrade, packingType, licensePlate |
+| `delivery_order_block` | 砌块送货明细表 | id, deliveryOrderId, productId, quantity, convertedCubic, price, amount, frameTaken, frameReturned |
+| `stock_records` | 库存记录表 | id, no, type(in/out), buyerId, sellerId, productId, quantity, amount |
 | `invoices` | 发票表 | id, type(in/out), invoiceNo, invoiceDate, amount, taxAmount, totalAmount, customerId |
 | `payments` | 收付款表 | id, type(income/expense), amount, paymentDate, customerId, invoiceId |
 | `statements` | 对账单表 | id, customerId, period, totalAmount, status |
+| `price_info` | 信息价表 | id, region, category, model, spec, unit, taxIncludedPrice, taxExcludedPrice, month |
 
 ### 数据关系
 
 ```
 ReconciliationUnit 1:N Customer(project)
-Customer 1:N DeliveryOrder
-Customer 1:N Contract
-Product 1:N DeliveryOrder
-Product 1:N Contract
-Product 1:N StockRecord
-Customer 1:N Invoice
+Customer 1:N DeliveryOrder (supplierDeliveryOrders, customerDeliveryOrders)
+Customer 1:N Invoice (inputInvoices, outputInvoices)
 Customer 1:N Payment
+Product 1:N ContractItem
+Product 1:N DeliveryOrderMortar
+Product 1:N DeliveryOrderBlock
+Contract 1:N ContractItem
+Contract 1:N DeliveryOrder
+DeliveryOrder 1:N DeliveryOrderMortar
+DeliveryOrder 1:N DeliveryOrderBlock
 ```
 
 ---
@@ -196,7 +226,14 @@ Customer 1:N Payment
 | GET | `/delivery-orders/:id` | 获取送货单详情 |
 | POST | `/delivery-orders` | 创建送货单 |
 | PUT | `/delivery-orders/:id` | 更新送货单 |
-| DELETE | `/delivery-orders/:id` | 删除送货单 |
+| DELETE | `/delivery-orders/:id` | 删除送货单（软删除） |
+| GET | `/delivery-orders/deleted` | 获取已删除送货单 |
+| PUT | `/delivery-orders/:id/restore` | 恢复已删除送货单 |
+| POST | `/delivery-orders/import` | 批量导入送货单 |
+| GET | `/delivery-orders/supplier-reconciliation` | 上游对账汇总 |
+| GET | `/delivery-orders/supplier-detail` | 上游对账明细 |
+| GET | `/delivery-orders/customer-reconciliation` | 下游对账汇总 |
+| GET | `/delivery-orders/customer-detail` | 下游对账明细 |
 
 ### 库存管理
 
@@ -237,6 +274,16 @@ Customer 1:N Payment
 | GET | `/reconciliation/downstream` | 下游对账（项目） |
 | PUT | `/reconciliation/:id/status` | 更新对账状态 |
 
+### 信息价管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/price-info` | 查询信息价列表 |
+| GET | `/price-info/:id` | 获取信息价详情 |
+| POST | `/price-info` | 创建信息价 |
+| PUT | `/price-info/:id` | 更新信息价 |
+| DELETE | `/price-info/:id` | 删除信息价 |
+
 ---
 
 ## 前端页面结构
@@ -254,7 +301,7 @@ Customer 1:N Payment
 | `/business/reconciliation-unit` | 对账单位 | 下游客户信息 |
 | `/business/product` | 产品管理 | 商品品类管理 |
 | `/business/contract` | 合同管理 | 合同信息管理 |
-| `/business/delivery` | 送货单管理 | 送货单信息 |
+| `/business/delivery` | 送货单管理 | 送货单信息（砂浆/砌块） |
 | `/business/upstream` | 上游对账 | 与厂家对账 |
 | `/business/downstream` | 下游对账 | 与项目对账 |
 | `/finance/stock` | 库存管理 | 入库/出库管理 |
@@ -279,8 +326,14 @@ npx ts-node scripts/import-data.ts
 # 同步项目数据
 npx ts-node scripts/sync-projects.ts
 
-# 重新导入客户数据
-npx ts-node scripts/reimport-customers.ts
+# 导入产品数据
+npx ts-node scripts/import-product-data.ts
+
+# 导入库存数据
+npx ts-node scripts/import-stock-data.ts
+
+# 导入信息价数据
+npx ts-node scripts/import-price-info.js
 ```
 
 ### 脚本说明
@@ -292,6 +345,16 @@ npx ts-node scripts/reimport-customers.ts
 | `reimport-customers.ts` | 重新导入客户数据 |
 | `reimport-manufacturers.ts` | 重新导入厂家数据 |
 | `fix-customer-type.ts` | 修复客户类型错误 |
+| `normalize-customer-type.ts` | 规范化客户类型 |
+| `import-product-data.ts` | 导入产品数据 |
+| `import-stock-data.ts` | 导入库存数据 |
+| `import-price-info.js` | 导入信息价数据 |
+| `generate-contract-template.ts` | 生成合同模板 |
+| `generate-contract-template-v2.ts` | 生成合同模板V2 |
+| `update-mortar-pricing-type.ts` | 更新砂浆定价类型 |
+| `sync-project-reconciliation.ts` | 同步项目对账数据 |
+| `delete-stock-data.ts` | 删除库存数据 |
+| `simplify-products.ts` | 简化产品数据 |
 
 ---
 
@@ -305,11 +368,28 @@ npx ts-node scripts/reimport-customers.ts
 BuildLink/
 ├── backend/                    # 后端服务
 │   ├── prisma/               # Prisma配置
+│   │   ├── migrations/       # 数据库迁移文件
+│   │   └── schema.prisma     # 数据库schema
 │   ├── scripts/              # 数据导入脚本
 │   ├── src/
-│   │   ├── common/           # 公共组件
+│   │   ├── common/           # 公共组件（过滤器、拦截器）
 │   │   ├── modules/          # 业务模块
-│   │   └── prisma/           # Prisma服务
+│   │   │   ├── auth/         # 认证模块
+│   │   │   ├── contract/     # 合同模块
+│   │   │   ├── customer/     # 客户模块
+│   │   │   ├── delivery/     # 送货单模块
+│   │   │   ├── invoice/      # 发票模块
+│   │   │   ├── payment/      # 收付款模块
+│   │   │   ├── price-info/   # 信息价模块
+│   │   │   ├── product/      # 产品模块
+│   │   │   ├── reconciliation/    # 对账模块
+│   │   │   ├── reconciliation-unit/ # 对账单位模块
+│   │   │   ├── statement/    # 对账单模块
+│   │   │   ├── stock/        # 库存模块
+│   │   │   └── user/         # 用户模块
+│   │   ├── prisma/           # Prisma服务
+│   │   ├── app.module.ts     # 应用模块
+│   │   └── main.ts           # 入口文件
 │   └── package.json
 ├── frontend/                  # 前端应用
 │   ├── src/
@@ -324,3 +404,15 @@ BuildLink/
 │   └── package.json
 └── README.md
 ```
+
+## 更新日志
+
+### v1.0.0 (2024-05-23)
+- 新增送货单管理功能（砂浆、砌块两种产品类型）
+- 新增送货单导入功能
+- 新增送货单回收站功能（软删除）
+- 新增上游对账功能
+- 新增下游对账功能
+- 完善合同明细表结构
+- 新增信息价管理模块
+- 优化库存记录结构

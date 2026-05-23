@@ -49,14 +49,18 @@ export const deliveryApi = {
     request.put<any, ApiResponse<DeliveryOrder>>(`/deliveries/${id}`, data),
   delete: (id: number) =>
     request.delete<any, ApiResponse>(`/deliveries/${id}`),
-  getProductNames: () =>
-    request.get<any, ApiResponse<string[]>>('/deliveries/product-names'),
-  getCustomerList: () =>
-    request.get<any, ApiResponse<{ id: number; name: string }[]>>('/deliveries/customers/list'),
-  getSupplierList: () =>
-    request.get<any, ApiResponse<{ id: number; name: string }[]>>('/deliveries/suppliers/list'),
-  calculatePrices: (data: { supplierId: number; projectId: number; items: any[] }) =>
-    request.post<any, ApiResponse<any[]>>('/deliveries/calculate-prices', data),
+  getDeleted: (params: any) =>
+    request.get<any, ApiResponse<PageResult<DeliveryOrder>>>('/deliveries/deleted', { params }),
+  restore: (id: number) =>
+    request.post<any, ApiResponse>(`/deliveries/restore/${id}`),
+  getSupplierReconciliation: (params: any) =>
+    request.get<any, ApiResponse<PageResult<any>>>('/deliveries/reconciliation/supplier', { params }),
+  getSupplierDeliveryDetail: (params: any) =>
+    request.get<any, ApiResponse<{ list: any[]; customerName: string; productType: string; totals: any }>>('/deliveries/reconciliation/supplier/detail', { params }),
+  getCustomerReconciliation: (params: any) =>
+    request.get<any, ApiResponse<PageResult<any>>>('/deliveries/reconciliation/customer', { params }),
+  getCustomerDeliveryDetail: (params: any) =>
+    request.get<any, ApiResponse<{ list: any[]; customerName: string; productType: string; totals: any }>>('/deliveries/reconciliation/customer/detail', { params }),
   importDeliveryOrders: (data: any) =>
     request.post<any, ApiResponse<{ success: number; failed: number; errors: any[] }>>('/deliveries/import', data)
 }
