@@ -2,7 +2,7 @@ export interface UserInfo {
   id: number
   username: string
   nickname: string
-  role: 'admin' | 'finance' | 'sales'
+  role: 'admin' | 'finance' | 'sales' | 'statistician'
   email?: string
   phone?: string
   deptId?: number
@@ -78,6 +78,9 @@ export interface Contract {
   type?: string
   signedDate: string
   status: 'draft' | 'active' | 'completed' | 'cancelled'
+  reconciliationCycle: 'monthly' | 'quarterly' | 'yearly'
+  discountRate?: number
+  settlementMethod: 'transfer' | 'cash' | 'check'
   remark?: string
   items?: ContractItem[]
   itemCount?: number
@@ -99,14 +102,94 @@ export interface Product {
   updatedAt: string
 }
 
-export interface ProductPriceHistory {
+export interface ProductCategory {
   id: number
-  productId: number
-  price: number
-  effectiveDate: string
-  createdAt: string
+  code: string
+  name: string
+  unit: string
+  fields?: ProductCategoryField[]
+  status: string
+  sort: number
 }
 
+export interface ProductCategoryField {
+  code: string
+  name: string
+  type: 'string' | 'number' | 'select' | 'date'
+  required?: boolean
+  defaultValue?: any
+  options?: { label: string; value: string }[]
+  sort?: number
+}
+
+// ============================================
+// 报货单
+// ============================================
+export interface OrderItem {
+  id?: number
+  orderId?: number
+  productId?: number
+  productName?: string
+  productSpec?: string
+  quantity: number
+  unit: string
+}
+
+export interface Order {
+  id: number
+  no: string
+  contractId?: number
+  contractNo?: string
+  supplierId: number
+  supplierName: string
+  customerId: number
+  customerName: string
+  categoryCode: string
+  categoryName?: string
+  planDeliveryDate: string
+  status: 'pending' | 'delivered' | 'cancelled'
+  items: OrderItem[]
+  totalQuantity: number
+  remark?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================
+// 送货单明细（通用结构）
+// ============================================
+export interface DeliveryOrderItemAttributes {
+  // 砂浆属性
+  mortarGrade?: string
+  packingType?: 'bulk' | 'bagged'
+  licensePlate?: string
+
+  // 砌块属性
+  convertedCubic?: number
+  frameTaken?: number
+  frameReturned?: number
+  remarks?: string
+
+  // 其他品类可扩展
+  [key: string]: any
+}
+
+export interface DeliveryOrderItem {
+  id: number
+  deliveryOrderId: number
+  productId?: number
+  productName?: string
+  productSpec?: string
+  quantity: number
+  receivedQuantity?: number
+  price: number
+  amount: number
+  attributes: DeliveryOrderItemAttributes
+}
+
+// ============================================
+// 送货单（重构后）
+// ============================================
 export interface DeliveryOrder {
   id: number
   no: string
@@ -116,55 +199,19 @@ export interface DeliveryOrder {
   supplierName: string
   customerId: number
   customerName: string
-  productType: 'mortar' | 'block'
+  categoryCode: string
+  categoryName?: string
   deliveryDate: string
+  businessType: 'contract' | 'retail'
   items: DeliveryOrderItem[]
   totalAmount: number
   status: 'pending' | 'delivered' | 'confirmed'
   receiptUrl?: string
   remark?: string
+  diffRemark?: string
+  deletedAt?: string
   createdAt: string
   updatedAt: string
-}
-
-export interface DeliveryOrderMortarItem {
-  id?: number
-  deliveryOrderId?: number
-  productId?: number
-  quantity: number
-  price: number
-  amount: number
-  mortarGrade: string
-  packingType: string
-  licensePlate: string
-  product?: { id: number; name: string }
-}
-
-export interface DeliveryOrderBlockItem {
-  id?: number
-  deliveryOrderId?: number
-  productId?: number
-  model?: string
-  quantity: number
-  convertedCubic: number
-  price: number
-  amount: number
-  frameTaken: number
-  frameReturned: number
-  remarks?: string
-  product?: { id: number; name: string }
-}
-
-export type DeliveryOrderItem = DeliveryOrderMortarItem | DeliveryOrderBlockItem
-
-export interface DeliveryItem {
-  id: number
-  productName: string
-  specification?: string
-  unit: string
-  quantity: number
-  unitPrice: number
-  amount: number
 }
 
 export interface Statement {

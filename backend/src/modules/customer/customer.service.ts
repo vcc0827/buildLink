@@ -86,7 +86,113 @@ export class CustomerService {
   }
 
   async remove(id: number) {
-    await this.findOne(id);
+    const customer = await this.findOne(id);
+    
+    // 先物理删除所有已软删除的送货单（解除外键约束）
+    await this.prisma.deliveryOrder.deleteMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { supplierId: id },
+              { customerId: id },
+            ],
+          },
+          { deletedAt: { not: null } },
+        ],
+      },
+    });
+    
+    // 检查是否有关联的送货单（排除已软删除的）
+    const deliveryCount = await this.prisma.deliveryOrder.count({
+      where: {
+        AND: [
+          {
+            OR: [
+              { supplierId: id },
+              { customerId: id },
+            ],
+          },
+          { deletedAt: null },
+        ],
+      },
+    });
+    
+    if (deliveryCount > 0) {
+      throw new Error(`该客商已关联 ${deliveryCount} 条送货单记录，无法删除`);
+    }
+    
+    // 检查是否有关联的库存记录
+    const stockCount = await this.prisma.stockRecord.count({
+      where: {
+        OR: [
+          { buyerId: id },
+          { sellerId: id },
+        ],
+      },
+    });
+    
+    if (stockCount > 0) {
+      throw new Error(`该客商已关联 ${stockCount} 条库存记录，无法删除`);
+    }
+    
+    // 检查是否有关联的合同
+    const contractCount = customer.reconciliationUnitId
+      ? await this.prisma.contract.count({
+          where: { reconciliationUnitId: customer.reconciliationUnitId },
+        })
+      : 0;
+    
+    if (contractCount > 0) {
+      throw new Error(`该客商已关联 ${contractCount} 条合同记录，无法删除`);
+    }
+    
+    // 检查是否有关联的报货单
+    const orderCount = await this.prisma.order.count({
+      where: {
+        OR: [
+          { supplierId: id },
+          { customerId: id },
+        ],
+      },
+    });
+    
+    if (orderCount > 0) {
+      throw new Error(`该客商已关联 ${orderCount} 条报货单记录，无法删除`);
+    }
+    
+    // 检查是否有关联的结算单
+    const statementCount = await this.prisma.statement.count({
+      where: { customerId: id },
+    });
+    
+    if (statementCount > 0) {
+      throw new Error(`该客商已关联 ${statementCount} 条结算单记录，无法删除`);
+    }
+    
+    // 检查是否有关联的发票
+    const invoiceCount = await this.prisma.invoice.count({
+      where: {
+        OR: [
+          { customerId: id },
+          { outputCustomerId: id },
+        ],
+      },
+    });
+    
+    if (invoiceCount > 0) {
+      throw new Error(`该客商已关联 ${invoiceCount} 条发票记录，无法删除`);
+    }
+    
+    // 检查是否有关联的收付款记录
+    const paymentCount = await this.prisma.payment.count({
+      where: { customerId: id },
+    });
+    
+    if (paymentCount > 0) {
+      throw new Error(`该客商已关联 ${paymentCount} 条收付款记录，无法删除`);
+    }
+    
     return this.prisma.customer.delete({ where: { id } });
   }
 }

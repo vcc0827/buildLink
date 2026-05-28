@@ -31,8 +31,8 @@ export class InvoiceService {
 
     const formatted = list.map((item: any) => ({
       ...item,
-      customerId: item.inputCustomer?.id || item.outputCustomer?.id,
-      customerName: item.inputCustomer?.name || item.outputCustomer?.name,
+      inputCustomerName: item.inputCustomer?.name,
+      outputCustomerName: item.outputCustomer?.name,
     }));
 
     return { list: formatted, total, page, pageSize };

@@ -7,10 +7,11 @@
       <el-tree
         :data="menuData"
         :props="treeProps"
-        :default-expanded-keys="expandedKeys"
-        :default-active-id="activeMenu"
+        :expanded-keys="expandedKeys"
+        :active-id="activeMenu"
         class="sidebar-tree"
         @node-click="handleNodeClick"
+        @expand-change="handleExpandChange"
       />
     </aside>
 
@@ -44,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
@@ -54,60 +55,135 @@ const userStore = useUserStore()
 
 const activeMenu = computed(() => route.path)
 
-const menuData = [
+const allMenuData = [
   {
     id: '/dashboard',
-    label: '首页工作台',
-    children: []
+    label: '首页 Dashboard',
+    children: [],
+    roles: ['admin', 'sales', 'finance', 'statistician']
   },
   {
-    id: 'business',
-    label: '业务管理',
+    id: 'base',
+    label: '基础档案',
     children: [
-      { id: '/supplier', label: '厂家管理' },
-      { id: '/reconciliation-unit', label: '对账单位' },
-      { id: '/project', label: '项目管理' },
-      { id: '/product', label: '产品管理' },
-      { id: '/price-info', label: '信息价管理' },
-      { id: '/contract', label: '合同管理' },
-      { id: '/delivery', label: '送货单管理' },
-      { id: '/upstream', label: '上游对账' },
-      { id: '/downstream', label: '下游对账' }
-    ]
+      { id: '/supplier', label: '厂家管理', roles: ['admin'] },
+      { id: '/reconciliation-unit', label: '对账单位/项目管理', roles: ['admin'] },
+      { id: '/product', label: '产品管理', roles: ['admin'] },
+      { id: '/price-info', label: '月度信息价管理', roles: ['admin'] },
+      { id: '/contract', label: '合同管理', roles: ['admin'] }
+    ],
+    roles: ['admin']
+  },
+  {
+    id: 'order',
+    label: '报货管理',
+    children: [
+      { id: '/order', label: '报货登记', roles: ['admin', 'statistician'] }
+    ],
+    roles: ['admin', 'statistician']
+  },
+  {
+    id: 'delivery',
+    label: '送货单管理',
+    children: [
+      { id: '/delivery', label: '送货单列表', roles: ['admin', 'statistician'] }
+    ],
+    roles: ['admin', 'statistician']
+  },
+  {
+    id: 'period',
+    label: '周期对账管理',
+    children: [
+      { id: '/period-config', label: '周期配置', roles: ['admin'] },
+      { id: '/period-reconciliation', label: '单据归集', roles: ['admin', 'finance'] }
+    ],
+    roles: ['admin', 'finance']
   },
   {
     id: 'finance',
-    label: '财务管理',
+    label: '财务中心',
     children: [
-      { id: '/invoice', label: '发票管理' },
-      { id: '/stock', label: '库存管理' },
-      { id: '/payment', label: '收付款管理' },
-      { id: '/reconciliation', label: '往来核销' }
-    ]
+      { id: '/invoice', label: '发票管理', roles: ['admin', 'finance'] },
+      { id: '/receivable-payable', label: '应收应付台账', roles: ['admin', 'finance', 'sales'] },
+      { id: '/payment', label: '收付款核销', roles: ['admin', 'finance'] },
+      { id: '/stock', label: '库存管理', roles: ['admin', 'finance'] }
+    ],
+    roles: ['admin', 'finance', 'sales']
+  },
+  {
+    id: 'inventory',
+    label: '库存管理',
+    children: [
+      { id: '/stock', label: '库存查询', roles: ['admin', 'finance'] }
+    ],
+    roles: ['admin', 'finance']
   },
   {
     id: 'report',
     label: '数据报表',
     children: [
-      { id: '/report', label: '经营报表' }
-    ]
+      { id: '/report-diff', label: '报货/送货差异表', roles: ['admin', 'finance', 'sales'] },
+      { id: '/report-receivable', label: '应收应付报表', roles: ['admin', 'finance', 'sales'] },
+      { id: '/report-invoice', label: '开票报表', roles: ['admin', 'finance'] }
+    ],
+    roles: ['admin', 'finance', 'sales']
+  },
+  {
+    id: 'system',
+    label: '系统管理',
+    children: [
+      { id: '/system-user', label: '用户管理', roles: ['admin'] },
+      { id: '/system-role', label: '角色权限分配', roles: ['admin'] },
+      { id: '/system-log', label: '操作日志', roles: ['admin'] }
+    ],
+    roles: ['admin']
   }
 ]
+
+const menuData = computed(() => {
+  const currentRole = userStore.role
+  
+  // 如果没有角色，先显示所有菜单
+  if (!currentRole) {
+    return allMenuData
+  }
+  
+  return allMenuData.filter(menu => {
+    if (!menu.roles || menu.roles.length === 0) return true
+    return menu.roles.includes(currentRole)
+  }).map(menu => ({
+    ...menu,
+    children: menu.children?.filter(child => {
+      if (!child.roles || child.roles.length === 0) return true
+      return child.roles.includes(currentRole)
+    }) || []
+  }))
+})
+
+// 持久化菜单展开状态
+const expandedKeys = ref<string[]>([])
+
+// 路由变化时，自动展开当前页面所属的父菜单
+watch(() => route.path, (newPath) => {
+  const parentKeys = ['base', 'order', 'delivery', 'period', 'finance', 'inventory', 'report', 'system']
+  parentKeys.forEach(key => {
+    const item = allMenuData.find(m => m.id === key)
+    if (item?.children.some(c => c.id === newPath) && !expandedKeys.value.includes(key)) {
+      expandedKeys.value.push(key)
+    }
+  })
+}, { immediate: true })
+
+// 处理菜单展开/收起事件
+const handleExpandChange = (keys: string[]) => {
+  expandedKeys.value = keys
+}
 
 const treeProps = {
   children: 'children',
   label: 'label',
   id: 'id'
 }
-
-const expandedKeys = computed(() => {
-  const path = route.path
-  const parentKeys = ['business', 'finance', 'report']
-  return parentKeys.filter(key => {
-    const item = menuData.find(m => m.id === key)
-    return item?.children.some(c => c.id === path)
-  })
-})
 
 const handleNodeClick = (data: any) => {
   if (data.children && data.children.length > 0) return

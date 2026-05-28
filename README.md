@@ -10,12 +10,14 @@
 - Pinia (状态管理)
 - Vue Router
 - Axios
+- Vitest (测试框架)
 
 ### 后端
 - NestJS + TypeScript
 - Prisma ORM
 - MySQL 8.4
 - JWT 认证
+- Jest (测试框架)
 
 ## 测试账号
 
@@ -24,6 +26,7 @@
 | admin | 123456 | 管理员 | 系统管理员，拥有所有权限 |
 | finance | 123456 | 财务 | 财务人员，可管理发票、收付款、核销 |
 | sales | 123456 | 业务员 | 业务员，可管理客户、合同、发货单 |
+| statistician | 123456 | 统计员 | 统计员，可管理报货、送货单 |
 
 ## 快速启动
 
@@ -72,6 +75,18 @@ npm run dev
 # 后端 (端口 4000)
 cd backend
 npm run dev
+```
+
+### 5. 运行测试
+
+```bash
+# 前端测试
+cd frontend
+npm run test
+
+# 后端测试
+cd backend
+npm run test
 ```
 
 ## 功能模块
@@ -131,8 +146,7 @@ npm run dev
 | `contracts` | 合同表 | id, no, name, reconciliationUnitId, type, signedDate, status |
 | `contract_items` | 合同明细表 | id, contractId, productId, productName, basePrice, adjustmentType, adjustmentValue, price |
 | `delivery_orders` | 送货单表 | id, no, supplierId, customerId, productType, deliveryDate, totalAmount |
-| `delivery_order_mortar` | 砂浆送货明细表 | id, deliveryOrderId, productId, quantity, price, amount, mortarGrade, packingType, licensePlate |
-| `delivery_order_block` | 砌块送货明细表 | id, deliveryOrderId, productId, quantity, convertedCubic, price, amount, frameTaken, frameReturned |
+| `delivery_order_items` | 送货明细表 | id, deliveryOrderId, productId, quantity, price, amount, attributes |
 | `stock_records` | 库存记录表 | id, no, type(in/out), buyerId, sellerId, productId, quantity, amount |
 | `invoices` | 发票表 | id, type(in/out), invoiceNo, invoiceDate, amount, taxAmount, totalAmount, customerId |
 | `payments` | 收付款表 | id, type(income/expense), amount, paymentDate, customerId, invoiceId |
@@ -147,12 +161,10 @@ Customer 1:N DeliveryOrder (supplierDeliveryOrders, customerDeliveryOrders)
 Customer 1:N Invoice (inputInvoices, outputInvoices)
 Customer 1:N Payment
 Product 1:N ContractItem
-Product 1:N DeliveryOrderMortar
-Product 1:N DeliveryOrderBlock
+Product 1:N DeliveryOrderItem
 Contract 1:N ContractItem
 Contract 1:N DeliveryOrder
-DeliveryOrder 1:N DeliveryOrderMortar
-DeliveryOrder 1:N DeliveryOrderBlock
+DeliveryOrder 1:N DeliveryOrderItem
 ```
 
 ---
@@ -164,7 +176,6 @@ DeliveryOrder 1:N DeliveryOrderBlock
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/auth/login` | 用户登录 |
-| POST | `/auth/logout` | 用户登出 |
 | GET | `/auth/profile` | 获取用户信息 |
 
 ### 用户管理
@@ -172,10 +183,6 @@ DeliveryOrder 1:N DeliveryOrderBlock
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/users` | 查询用户列表 |
-| GET | `/users/:id` | 获取用户详情 |
-| POST | `/users` | 创建用户 |
-| PUT | `/users/:id` | 更新用户 |
-| DELETE | `/users/:id` | 删除用户 |
 
 ### 客户管理
 
@@ -222,29 +229,22 @@ DeliveryOrder 1:N DeliveryOrderBlock
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/delivery-orders` | 查询送货单列表 |
-| GET | `/delivery-orders/:id` | 获取送货单详情 |
-| POST | `/delivery-orders` | 创建送货单 |
-| PUT | `/delivery-orders/:id` | 更新送货单 |
-| DELETE | `/delivery-orders/:id` | 删除送货单（软删除） |
-| GET | `/delivery-orders/deleted` | 获取已删除送货单 |
-| PUT | `/delivery-orders/:id/restore` | 恢复已删除送货单 |
-| POST | `/delivery-orders/import` | 批量导入送货单 |
-| GET | `/delivery-orders/supplier-reconciliation` | 上游对账汇总 |
-| GET | `/delivery-orders/supplier-detail` | 上游对账明细 |
-| GET | `/delivery-orders/customer-reconciliation` | 下游对账汇总 |
-| GET | `/delivery-orders/customer-detail` | 下游对账明细 |
+| GET | `/deliveries` | 查询送货单列表 |
+| GET | `/deliveries/:id` | 获取送货单详情 |
+| POST | `/deliveries` | 创建送货单 |
+| PUT | `/deliveries/:id` | 更新送货单 |
+| DELETE | `/deliveries/:id` | 删除送货单（软删除） |
+| POST | `/deliveries/import` | 批量导入送货单 |
 
 ### 库存管理
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/stock-records` | 查询库存记录列表 |
-| GET | `/stock-records/:id` | 获取库存记录详情 |
-| POST | `/stock-records` | 创建库存记录（入库/出库） |
-| PUT | `/stock-records/:id` | 更新库存记录 |
-| DELETE | `/stock-records/:id` | 删除库存记录 |
-| GET | `/stock-records/statistics` | 获取库存统计 |
+| GET | `/stock` | 查询库存记录列表 |
+| GET | `/stock/:id` | 获取库存记录详情 |
+| POST | `/stock` | 创建库存记录（入库/出库） |
+| PUT | `/stock/:id` | 更新库存记录 |
+| DELETE | `/stock/:id` | 删除库存记录 |
 
 ### 发票管理
 
@@ -266,24 +266,6 @@ DeliveryOrder 1:N DeliveryOrderBlock
 | PUT | `/payments/:id` | 更新收付款 |
 | DELETE | `/payments/:id` | 删除收付款 |
 
-### 对账管理
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/reconciliation/upstream` | 上游对账（厂家） |
-| GET | `/reconciliation/downstream` | 下游对账（项目） |
-| PUT | `/reconciliation/:id/status` | 更新对账状态 |
-
-### 信息价管理
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/price-info` | 查询信息价列表 |
-| GET | `/price-info/:id` | 获取信息价详情 |
-| POST | `/price-info` | 创建信息价 |
-| PUT | `/price-info/:id` | 更新信息价 |
-| DELETE | `/price-info/:id` | 删除信息价 |
-
 ---
 
 ## 前端页面结构
@@ -296,71 +278,81 @@ DeliveryOrder 1:N DeliveryOrderBlock
 | 路径 | 页面名称 | 说明 |
 |------|----------|------|
 | `/dashboard` | 首页工作台 | 数据概览、快捷入口 |
-| `/business/supplier` | 厂家管理 | 供应商信息管理 |
-| `/business/project` | 项目管理 | 工地项目信息 |
-| `/business/reconciliation-unit` | 对账单位 | 下游客户信息 |
-| `/business/product` | 产品管理 | 商品品类管理 |
-| `/business/contract` | 合同管理 | 合同信息管理 |
-| `/business/delivery` | 送货单管理 | 送货单信息（砂浆/砌块） |
-| `/business/upstream` | 上游对账 | 与厂家对账 |
-| `/business/downstream` | 下游对账 | 与项目对账 |
-| `/finance/stock` | 库存管理 | 入库/出库管理 |
-| `/finance/invoice` | 发票管理 | 发票信息 |
-| `/finance/payment` | 收付款管理 | 收款/付款记录 |
-| `/finance/reconciliation` | 往来核销 | 核销管理 |
-| `/report` | 数据报表 | 统计报表 |
+| `/supplier` | 厂家管理 | 供应商信息管理 |
+| `/reconciliation-unit` | 对账单位 | 下游客户信息 |
+| `/product` | 产品管理 | 商品品类管理 |
+| `/price-info` | 信息价管理 | 月度信息价 |
+| `/contract` | 合同管理 | 合同信息管理 |
+| `/order` | 报货管理 | 报货登记 |
+| `/delivery` | 送货单管理 | 送货单信息 |
+| `/period-config` | 周期配置 | 对账周期设置 |
+| `/period-reconciliation` | 周期对账 | 单据归集 |
+| `/invoice` | 发票管理 | 发票信息 |
+| `/receivable-payable` | 应收应付台账 | 往来台账 |
+| `/payment` | 收付款核销 | 核销管理 |
+| `/stock` | 库存管理 | 入库/出库管理 |
+| `/report-diff` | 报货/送货差异表 | 差异报表 |
+| `/report-receivable` | 应收应付报表 | 财务报表 |
+| `/report-invoice` | 开票报表 | 发票报表 |
+| `/system-user` | 用户管理 | 系统用户管理 |
+| `/system-role` | 角色权限 | 角色权限分配 |
+| `/system-log` | 操作日志 | 系统日志 |
 | `/login` | 登录页 | 用户登录 |
 
 ---
 
-## 数据导入脚本
+## 角色权限说明
 
-### 运行脚本
+| 角色 | 可访问模块 |
+|------|-----------|
+| admin | 所有模块 |
+| finance | dashboard、财务中心、数据报表 |
+| sales | dashboard、应收应付台账、数据报表 |
+| statistician | dashboard、报货管理、送货单管理 |
+
+---
+
+## 测试框架
+
+### 前端测试 (Vitest)
+
+```bash
+cd frontend
+
+# 运行测试
+npm run test
+
+# 开发模式运行测试（watch）
+npm run test:watch
+
+# 生成测试覆盖率报告
+npm run test:cov
+```
+
+### 后端测试 (Jest)
 
 ```bash
 cd backend
 
-# 导入基础数据
-npx ts-node scripts/import-data.ts
+# 运行测试
+npm run test
 
-# 同步项目数据
-npx ts-node scripts/sync-projects.ts
+# 开发模式运行测试（watch）
+npm run test:watch
 
-# 导入产品数据
-npx ts-node scripts/import-product-data.ts
-
-# 导入库存数据
-npx ts-node scripts/import-stock-data.ts
-
-# 导入信息价数据
-npx ts-node scripts/import-price-info.js
+# 生成测试覆盖率报告
+npm run test:cov
 ```
 
-### 脚本说明
+### 测试文件位置
 
-| 脚本 | 说明 |
+| 位置 | 说明 |
 |------|------|
-| `import-data.ts` | 导入对账单位、客户、产品基础数据 |
-| `sync-projects.ts` | 从对账单位同步项目数据 |
-| `reimport-customers.ts` | 重新导入客户数据 |
-| `reimport-manufacturers.ts` | 重新导入厂家数据 |
-| `fix-customer-type.ts` | 修复客户类型错误 |
-| `normalize-customer-type.ts` | 规范化客户类型 |
-| `import-product-data.ts` | 导入产品数据 |
-| `import-stock-data.ts` | 导入库存数据 |
-| `import-price-info.js` | 导入信息价数据 |
-| `generate-contract-template.ts` | 生成合同模板 |
-| `generate-contract-template-v2.ts` | 生成合同模板V2 |
-| `update-mortar-pricing-type.ts` | 更新砂浆定价类型 |
-| `sync-project-reconciliation.ts` | 同步项目对账数据 |
-| `delete-stock-data.ts` | 删除库存数据 |
-| `simplify-products.ts` | 简化产品数据 |
+| `frontend/src/stores/user.test.ts` | 用户状态管理测试 |
+| `frontend/src/router/router.test.ts` | 路由守卫测试 |
+| `backend/src/modules/auth/auth.service.spec.ts` | 认证服务测试 |
 
 ---
-
-## 接口文档
-
-启动后端服务后访问：http://localhost:4000/api
 
 ## 项目结构
 
@@ -390,6 +382,7 @@ BuildLink/
 │   │   ├── prisma/           # Prisma服务
 │   │   ├── app.module.ts     # 应用模块
 │   │   └── main.ts           # 入口文件
+│   ├── jest.config.js        # Jest配置
 │   └── package.json
 ├── frontend/                  # 前端应用
 │   ├── src/
@@ -401,11 +394,35 @@ BuildLink/
 │   │   ├── types/            # TypeScript类型
 │   │   ├── utils/            # 工具函数
 │   │   └── views/            # 页面组件
+│   ├── test/                 # 测试配置
+│   ├── vitest.config.ts      # Vitest配置
 │   └── package.json
 └── README.md
 ```
 
+---
+
 ## 更新日志
+
+### v1.0.2 (2026-05-28)
+- 🔴 修复 ProductService.getCategories() 查询不存在的 categoryName 字段导致的运行时崩溃
+- 🟡 修复 Customer.remove() 合同关联检查逻辑错误（客户ID误用于合同 reconciliationUnitId 查询）
+- 🟡 修复 Customer.remove() 中 customer 变量获取后未复用导致重复查询
+- 🟡 修复 ProductService.update() 修改 categoryId 时不同步 categoryCode
+- 🟡 修复 Invoice 列表格式化中 inputCustomer/outputCustomer 使用 || 歧义逻辑
+- 🟡 修复 DeliveryService.processImportRow() 导入时每行全量查询客商（性能优化）
+- 🟢 清理 delivery.dto.ts 中重复的 ProductCategoryDto 类型定义
+- 🟢 统一 price-info.service.ts 的 PrismaService import 路径
+- 🟢 StatementService.generate() 消除硬编码品类映射，改为可选 categoryCode 参数
+
+### v1.0.1 (2026-05-26)
+- 修复权限管理问题：登录后刷新页面角色信息丢失
+- 修复路由守卫逻辑：dashboard页面权限处理
+- 添加前端测试框架 (Vitest)
+- 添加后端测试框架 (Jest)
+- 编写用户信息持久化测试用例
+- 编写路由守卫测试用例
+- 更新API命名规范：统一使用 `get` 替代 `getById`
 
 ### v1.0.0 (2024-05-23)
 - 新增送货单管理功能（砂浆、砌块两种产品类型）

@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { ProductModule } from './modules/product/product.module';
+import { ProductCategoryModule } from './modules/product-category/product-category.module';
 import { ContractModule } from './modules/contract/contract.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
 import { StatementModule } from './modules/statement/statement.module';
@@ -16,6 +17,7 @@ import { ReconciliationModule } from './modules/reconciliation/reconciliation.mo
 import { ReconciliationUnitModule } from './modules/reconciliation-unit/reconciliation-unit.module';
 import { StockModule } from './modules/stock/stock.module';
 import { PriceInfoModule } from './modules/price-info/price-info.module';
+import { OrderModule } from './modules/order/order.module';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { PriceInfoModule } from './modules/price-info/price-info.module';
     UserModule,
     CustomerModule,
     ProductModule,
+    ProductCategoryModule,
     ContractModule,
     DeliveryModule,
     StatementModule,
@@ -39,6 +42,7 @@ import { PriceInfoModule } from './modules/price-info/price-info.module';
     ReconciliationUnitModule,
     StockModule,
     PriceInfoModule,
+    OrderModule,
   ],
 })
 export class AppModule {}

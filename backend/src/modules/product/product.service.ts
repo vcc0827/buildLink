@@ -38,6 +38,14 @@ export class ProductService {
 
   async update(id: number, data: any) {
     await this.findOne(id);
+    if (data.categoryId) {
+      const category = await this.prisma.productCategory.findUnique({
+        where: { id: data.categoryId },
+      });
+      if (category) {
+        data.categoryCode = category.code;
+      }
+    }
     return this.prisma.product.update({ where: { id }, data });
   }
 
@@ -48,16 +56,23 @@ export class ProductService {
 
   async getCategories() {
     const categories = await this.prisma.product.findMany({
-      distinct: ['name'],
-      select: { name: true },
-      orderBy: { name: 'asc' },
+      distinct: ['categoryCode'],
+      where: { categoryCode: { not: null } },
+      select: {
+        categoryCode: true,
+        category: { select: { name: true } },
+      },
+      orderBy: { categoryCode: 'asc' },
     });
-    return categories.map(c => c.name);
+    return categories.map(c => ({
+      code: c.categoryCode,
+      name: c.category?.name || c.categoryCode,
+    }));
   }
 
-  async getByCategory(name: string) {
+  async getByCategory(code: string) {
     return this.prisma.product.findMany({
-      where: { name },
+      where: { categoryCode: code },
       select: {
         id: true,
         name: true,

@@ -4,6 +4,15 @@
 
 BuildLink是一个建筑材料供应链管理系统的后端服务，基于 NestJS + Prisma + MySQL 构建。
 
+## 技术栈
+
+- **框架**: NestJS 10.x
+- **语言**: TypeScript
+- **ORM**: Prisma
+- **数据库**: MySQL 8.4
+- **认证**: JWT
+- **测试框架**: Jest
+
 ## 数据库表结构与字段类型说明
 
 ### 1. 客户表 (customers)
@@ -34,7 +43,7 @@ BuildLink是一个建筑材料供应链管理系统的后端服务，基于 Nest
 |--------|------|------|--------|
 | status | String | 状态 | `pending`(待确认), `confirmed`(已确认), `delivered`(已送达), `cancelled`(已取消) |
 
-### 5. 库存表 (stock)
+### 5. 库存记录表 (stock_records)
 
 | 字段名 | 类型 | 说明 | 可选值 |
 |--------|------|------|--------|
@@ -48,11 +57,11 @@ BuildLink是一个建筑材料供应链管理系统的后端服务，基于 Nest
 | type | String | 发票类型 | `purchase`(采购发票), `sale`(销售发票) |
 | status | String | 状态 | `pending`(待审核), `approved`(已审核), `paid`(已付款), `rejected`(已拒绝) |
 
-### 7. 付款表 (payments)
+### 7. 收付款表 (payments)
 
 | 字段名 | 类型 | 说明 | 可选值 |
 |--------|------|------|--------|
-| type | String | 付款类型 | `payment`(付款), `receipt`(收款) |
+| type | String | 付款类型 | `income`(收款), `expense`(付款) |
 | status | String | 状态 | `pending`(待审批), `approved`(已审批), `paid`(已支付), `rejected`(已拒绝) |
 
 ### 8. 对账单位表 (reconciliation_units)
@@ -95,6 +104,19 @@ npm run build
 npm run start:prod
 ```
 
+### 运行测试
+
+```bash
+# 运行测试
+npm run test
+
+# 开发模式运行测试（watch）
+npm run test:watch
+
+# 生成测试覆盖率报告
+npm run test:cov
+```
+
 ## API 文档
 
 启动服务后访问: http://localhost:4000/api
@@ -105,15 +127,28 @@ npm run start:prod
 backend/
 ├── src/
 │   ├── modules/          # 业务模块
+│   │   ├── auth/         # 认证模块
 │   │   ├── contract/     # 合同管理
+│   │   ├── customer/     # 客户管理
 │   │   ├── delivery/     # 送货单管理
 │   │   ├── invoice/      # 发票管理
+│   │   ├── payment/      # 收付款管理
 │   │   ├── price-info/   # 信息价管理
-│   │   └── ...           # 其他模块
-│   ├── prisma/           # Prisma 配置
+│   │   ├── product/      # 产品管理
+│   │   ├── reconciliation/        # 对账模块
+│   │   ├── reconciliation-unit/   # 对账单位模块
+│   │   ├── statement/    # 对账单模块
+│   │   ├── stock/        # 库存模块
+│   │   └── user/         # 用户模块
+│   ├── common/           # 公共组件（过滤器、拦截器、守卫）
+│   ├── prisma/           # Prisma 服务
 │   ├── utils/            # 工具函数
 │   └── app.module.ts     # 主应用模块
 ├── scripts/              # 数据导入脚本
+├── prisma/               # Prisma 配置
+│   ├── migrations/       # 数据库迁移文件
+│   └── schema.prisma     # 数据库 Schema
+├── jest.config.js        # Jest 配置
 ├── .env                  # 环境变量配置
 └── package.json          # 项目依赖
 ```
@@ -144,3 +179,19 @@ JWT_SECRET="your-jwt-secret"
 ```bash
 npx ts-node scripts/import-product-data.ts
 ```
+
+## 测试文件
+
+| 文件路径 | 说明 |
+|----------|------|
+| `src/modules/auth/auth.service.spec.ts` | 认证服务单元测试 |
+
+## 更新日志
+
+### v1.0.1 (2026-05-26)
+- 添加 Jest 测试框架
+- 编写认证服务测试用例
+- 修复生产环境日志冗余问题
+
+### v1.0.0 (2024-05-23)
+- 初始版本发布

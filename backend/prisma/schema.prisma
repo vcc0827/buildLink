@@ -92,6 +92,8 @@ model Customer {
   reconciliationUnit   ReconciliationUnit? @relation(fields: [reconciliationUnitId], references: [id])
   supplierDeliveryOrders DeliveryOrder[]   @relation("DeliverySupplier")
   customerDeliveryOrders DeliveryOrder[]   @relation("DeliveryCustomer")
+  supplierOrders       Order[]             @relation("OrderSupplier")
+  customerOrders       Order[]             @relation("OrderCustomer")
   inputInvoices        Invoice[]           @relation("InputInvoices")
   outputInvoices       Invoice[]           @relation("OutputInvoices")
   payments             Payment[]
@@ -106,22 +108,27 @@ model Customer {
 model Product {
   id          Int       @id @default(autoincrement())
   name        String    @db.VarChar(100)
+  categoryId  Int?      @map("category_id")
+  categoryCode String?  @map("category_code") @db.VarChar(50)  // 品类编码冗余字段，便于直接过滤
   unit        String    @db.VarChar(20)
   model       String?   @db.VarChar(100)
   spec        String?   @db.VarChar(100)
   price       Decimal?  @db.Decimal(15, 2)
   pricingType String    @default("fixed_price") @db.VarChar(20) @map("pricing_type")
   status      String    @default("active") @db.VarChar(20)
-  remark      String?   @db.Text
+  remark      String?  @db.Text
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
+  category         ProductCategory?      @relation(fields: [categoryId], references: [id])
   contractItems    ContractItem[]
   priceHistory     ProductPriceHistory[]
-  mortarOrderItems DeliveryOrderMortar[]
-  blockOrderItems  DeliveryOrderBlock[]
+  deliveryItems    DeliveryOrderItem[]
+  orderItems       OrderItem[]
   stockRecords     StockRecord[]
 
+  @@index([categoryId], map: "products_category_id_fkey")
+  @@index([categoryCode], map: "products_category_code_idx")
   @@map("products")
 }
 
@@ -154,6 +161,7 @@ model Contract {
   reconciliationUnit ReconciliationUnit? @relation(fields: [reconciliationUnitId], references: [id])
   items           ContractItem[]
   deliveryOrders  DeliveryOrder[]
+  orders          Order[]
 
   @@index([reconciliationUnitId], map: "contracts_reconciliation_unit_id_fkey")
   @@map("contracts")
@@ -181,68 +189,138 @@ model ContractItem {
   @@map("contract_items")
 }
 
+// ============================================
+// 产品品类配置表 - 定义各类产品独有计量字段
+// ============================================
+model ProductCategory {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique @db.VarChar(50)    // 品类编码: mortar(砂浆), block(砌块), board(保温板), steel(钢筋) 等
+  name        String    @db.VarChar(100)           // 品类名称
+  unit        String    @db.VarChar(20)            // 计量单位
+  fields      Json?                              // 品类专属字段配置 JSON
+  status      String    @default("active") @db.VarChar(20)
+  sort        Int       @default(0)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  products    Product[]
+
+  @@map("product_categories")
+}
+
+// ============================================
+// 送货单主表
+// ============================================
+// ============================================
+// 报货单主表 - 用于报货登记
+// ============================================
+model Order {
+  id              Int       @id @default(autoincrement())
+  no              String    @unique @db.VarChar(50)
+  contractId      Int?
+  supplierId      Int
+  customerId      Int
+  categoryCode    String    @map("category_code") @db.VarChar(50)  // 产品品类编码
+  planDeliveryDate DateTime @map("plan_delivery_date")  // 计划发货日期
+  totalQuantity   Decimal   @default(0) @map("total_quantity") @db.Decimal(15, 4)
+  status          String    @default("pending") @db.VarChar(20)  // pending(待发货), delivered(已发货), cancelled(已取消)
+  remark          String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  contract        Contract?       @relation(fields: [contractId], references: [id])
+  supplier        Customer         @relation("OrderSupplier", fields: [supplierId], references: [id])
+  customer        Customer         @relation("OrderCustomer", fields: [customerId], references: [id])
+  items           OrderItem[]
+
+  @@index([contractId], map: "orders_contractId_fkey")
+  @@index([supplierId], map: "orders_supplierId_fkey")
+  @@index([customerId], map: "orders_customerId_fkey")
+  @@index([categoryCode], map: "orders_category_code_idx")
+  @@map("orders")
+}
+
+// ============================================
+// 报货单明细表
+// ============================================
+model OrderItem {
+  id         Int       @id @default(autoincrement())
+  orderId    Int       @map("order_id")
+  productId  Int?      @map("product_id")
+  productName String   @map("product_name") @db.VarChar(100)
+  unit       String    @db.VarChar(20)
+  model      String?   @db.VarChar(100)
+  spec       String?   @db.VarChar(100)
+  quantity   Decimal   @db.Decimal(15, 4)
+  price      Decimal   @db.Decimal(15, 4)
+  amount     Decimal   @db.Decimal(15, 2)
+  remark     String?   @db.Text
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product?  @relation(fields: [productId], references: [id])
+
+  @@index([orderId], map: "order_items_order_id_fkey")
+  @@index([productId], map: "order_items_product_id_fkey")
+  @@map("order_items")
+}
+
 model DeliveryOrder {
-  id           Int            @id @default(autoincrement())
-  no           String         @unique @db.VarChar(50)
+  id           Int       @id @default(autoincrement())
+  no           String    @unique @db.VarChar(50)
   contractId   Int?
   supplierId   Int
   customerId   Int
-  productType  String         @db.VarChar(20)
-  deliveryDate DateTime       @map("delivery_date")
-  totalAmount  Decimal        @db.Decimal(15, 2)
-  status       String         @default("pending") @db.VarChar(20)
-  receiptUrl   String?        @map("receipt_url") @db.VarChar(255)
-  remark       String?        @db.Text
-  deletedAt    DateTime?      @map("deleted_at")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
-  contract     Contract?      @relation(fields: [contractId], references: [id])
-  supplier     Customer       @relation("DeliverySupplier", fields: [supplierId], references: [id])
-  customer     Customer       @relation("DeliveryCustomer", fields: [customerId], references: [id])
-  mortarItems  DeliveryOrderMortar[]
-  blockItems   DeliveryOrderBlock[]
+  categoryCode String    @map("category_code") @db.VarChar(50)  // 产品品类编码
+  deliveryDate DateTime  @map("delivery_date")
+  totalAmount  Decimal   @db.Decimal(15, 2)
+  status       String    @default("pending") @db.VarChar(20)
+  receiptUrl   String?   @map("receipt_url") @db.VarChar(255)
+  remark       String?   @db.Text
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  contract     Contract?       @relation(fields: [contractId], references: [id])
+  supplier     Customer         @relation("DeliverySupplier", fields: [supplierId], references: [id])
+  customer     Customer         @relation("DeliveryCustomer", fields: [customerId], references: [id])
+  items        DeliveryOrderItem[]
 
   @@index([contractId], map: "delivery_orders_contractId_fkey")
   @@index([supplierId], map: "delivery_orders_supplierId_fkey")
   @@index([customerId], map: "delivery_orders_customerId_fkey")
+  @@index([categoryCode], map: "delivery_orders_category_code_idx")
   @@map("delivery_orders")
 }
 
-model DeliveryOrderMortar {
+// ============================================
+// 送货单明细表 - 通用结构，支持所有产品品类
+// ============================================
+model DeliveryOrderItem {
   id              Int           @id @default(autoincrement())
   deliveryOrderId Int           @map("delivery_order_id")
   productId       Int?          @map("product_id")
-  quantity        Decimal       @db.Decimal(15, 4)
-  price           Decimal       @db.Decimal(15, 4)
-  amount          Decimal       @db.Decimal(15, 2)
-  mortarGrade     String        @map("mortar_grade") @db.VarChar(50)
-  packingType     String        @map("packing_type") @db.VarChar(20)
-  licensePlate    String        @map("license_plate") @db.VarChar(20)
-  deliveryOrder   DeliveryOrder @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
+
+  // 通用字段
+  quantity        Decimal       @db.Decimal(15, 4)            // 数量（主计量单位）
+  price           Decimal       @db.Decimal(15, 4)            // 单价
+  amount          Decimal       @db.Decimal(15, 2)            // 金额
+
+  // 品类专属字段（JSON存储灵活扩展）
+  // 砂浆(mortar): mortarGrade(标号), packingType(散装/袋包), licensePlate(车牌)
+  // 砌块(block): convertedCubic(折立方), frameTaken(带去铁架), frameReturned(带回铁架)
+  // 保温板(board): thickness(厚度), length(长度), width(宽度), layers(层数)
+  // 钢筋(steel): diameter(直径), length(长度), weight(理论重量)
+  attributes      Json?                               // 品类专属属性JSON
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  deliveryOrder   DeliveryOrder  @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
   product         Product?      @relation(fields: [productId], references: [id])
 
-  @@index([deliveryOrderId], map: "delivery_order_mortar_delivery_order_id_fkey")
-  @@index([productId], map: "delivery_order_mortar_product_id_fkey")
-  @@map("delivery_order_mortar")
-}
-
-model DeliveryOrderBlock {
-  id              Int           @id @default(autoincrement())
-  deliveryOrderId Int           @map("delivery_order_id")
-  productId       Int?          @map("product_id")
-  quantity        Decimal       @db.Decimal(15, 4)
-  convertedCubic  Decimal       @db.Decimal(15, 4) @map("converted_cubic")
-  price           Decimal       @db.Decimal(15, 4)
-  amount          Decimal       @db.Decimal(15, 2)
-  frameTaken      Int           @map("frame_taken")
-  frameReturned   Int           @map("frame_returned")
-  remarks         String?       @db.Text
-  deliveryOrder   DeliveryOrder @relation(fields: [deliveryOrderId], references: [id], onDelete: Cascade)
-  product         Product?      @relation(fields: [productId], references: [id])
-
-  @@index([deliveryOrderId], map: "delivery_order_block_delivery_order_id_fkey")
-  @@index([productId], map: "delivery_order_block_product_id_fkey")
-  @@map("delivery_order_block")
+  @@index([deliveryOrderId], map: "delivery_order_items_delivery_order_id_fkey")
+  @@index([productId], map: "delivery_order_items_product_id_fkey")
+  @@map("delivery_order_items")
 }
 
 model Statement {
@@ -371,7 +449,8 @@ model StockRecord {
   buyerId     Int       @map("buyer_id")
   sellerId    Int       @map("seller_id")
   productId   Int?      @map("product_id")
-  model       String?   @db.VarChar(100)
+  categoryCode String?  @map("category_code") @db.VarChar(50)  // 产品品类编码
+  model       String?  @db.VarChar(100)
   unit        String    @db.VarChar(20)
   quantity    Decimal   @db.Decimal(15, 4)
   amount      Decimal   @db.Decimal(15, 2)
@@ -391,6 +470,7 @@ model StockRecord {
   @@index([buyerId], map: "stock_records_buyer_id_fkey")
   @@index([sellerId], map: "stock_records_seller_id_fkey")
   @@index([productId], map: "stock_records_product_id_fkey")
+  @@index([categoryCode], map: "stock_records_category_code_idx")
   @@index([month], map: "stock_records_month_idx")
   @@index([type], map: "stock_records_type_idx")
   @@map("stock_records")

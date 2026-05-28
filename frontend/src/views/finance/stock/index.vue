@@ -252,7 +252,7 @@ const calculateUnitPrice = () => {
 
 const handleProductChange = async () => {
   if (form.productId) {
-    const res = await productApi.getById(form.productId)
+    const res = await productApi.get(form.productId)
     if (res.data) {
       form.unit = res.data.unit || ''
       form.model = res.data.model || ''

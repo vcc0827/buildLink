@@ -9,11 +9,19 @@
           class="search-input"
           @keyup.enter="handleQuery"
         />
+        <el-select v-model="queryForm.categoryCode" placeholder="产品品类" clearable style="width: 160px" @change="handleQuery">
+          <el-option v-for="cat in categories" :key="cat.code" :label="cat.name" :value="cat.code" />
+        </el-select>
+        <el-select v-model="queryForm.status" placeholder="状态" clearable style="width: 120px" @change="handleQuery">
+          <el-option label="待发货" value="pending" />
+          <el-option label="已发货" value="delivered" />
+          <el-option label="已确认" value="confirmed" />
+        </el-select>
         <el-button type="primary" class="search-btn" @click="handleQuery">
           <el-icon><Search /></el-icon> 查询
         </el-button>
       </div>
-      <el-button  type="primary" class="export-btn" @click="handleExport">
+      <el-button type="primary" class="export-btn" @click="handleExport">
         <el-icon><Download /></el-icon> 下载
       </el-button>
     </div>
@@ -24,7 +32,7 @@
           <el-icon><Delete /></el-icon> 批量删除 ({{ selectedRows.length }})
         </el-button>
         <el-button v-if="showRecycleBin" type="warning" @click="handleRecycleBin">
-          <el-icon><Delete /></el-icon> 回收站
+          <el-icon><Refresh /></el-icon> 回收站
         </el-button>
       </div>
       <div>
@@ -37,23 +45,37 @@
       </div>
     </div>
 
+    <!-- 主列表表格 -->
     <el-table :data="tableData" border stripe v-loading="loading" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" />
       <el-table-column prop="no" label="送货单号" width="180" />
       <el-table-column prop="supplierName" label="供货单位" min-width="150" />
       <el-table-column prop="customerName" label="项目名称" min-width="150" />
-      <el-table-column prop="productType" label="产品类型" width="100">
+      <el-table-column prop="categoryCode" label="产品品类" width="140">
         <template #default="{ row }">
-          <el-tag :type="row.productType === 'mortar' ? 'success' : 'warning'" size="small">
-            {{ row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块' }}
+          <el-tag :type="getCategoryTagType(row.categoryCode)" size="small">
+            {{ row.categoryName || row.categoryCode }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="deliveryDate" label="送货日期" width="110">
         <template #default="{ row }">{{ formatDate(row.deliveryDate) }}</template>
       </el-table-column>
+      <!-- 动态品类专属列 -->
+      <el-table-column v-for="col in dynamicColumns" :key="col.code" :prop="col.code" :label="col.name" :width="col.width || 120" align="right">
+        <template #default="{ row }">
+          {{ formatDynamicValue(row, col) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="totalAmount" label="总金额" width="120" align="right">
         <template #default="{ row }"> ¥{{ row.totalAmount?.toLocaleString() }} </template>
+      </el-table-column>
+      <el-table-column prop="businessType" label="业务类型" width="100">
+        <template #default="{ row }">
+          <el-tag :type="row.businessType === 'contract' ? 'primary' : 'success'" size="small">
+            {{ row.businessType === 'contract' ? '合同单' : '零售单' }}
+          </el-tag>
+        </template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
@@ -62,25 +84,26 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link @click="handleView(row)">查看</el-button>
-          <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
-          <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
+          <el-button v-if="row.status !== 'confirmed'" type="primary" link @click="handleEdit(row)">编辑</el-button>
+          <el-button v-if="row.status === 'delivered'" type="success" link @click="handleConfirm(row)">确认签收</el-button>
+          <el-button v-if="row.status !== 'confirmed'" type="danger" link @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <el-pagination class="mt-16" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" @size-change="loadData" @current-change="loadData" />
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="900px" @closed="onDialogClosed">
+    <!-- 新增/编辑对话框 -->
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="950px" @closed="onDialogClosed">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="产品类型" prop="productType">
-              <el-select v-model="form.productType" placeholder="请选择" :disabled="!!form.id" style="width: 100%" @change="onProductTypeChange">
-                <el-option label="砂浆" value="mortar" />
-                <el-option label="蒸压加气混凝土砌块" value="block" />
+            <el-form-item label="产品品类" prop="categoryCode">
+              <el-select v-model="form.categoryCode" placeholder="请选择" :disabled="!!form.id" style="width: 100%" @change="onCategoryChange">
+                <el-option v-for="cat in categories" :key="cat.code" :label="cat.name" :value="cat.code" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -122,6 +145,14 @@
         </el-row>
         <el-row :gutter="20">
           <el-col :span="12">
+            <el-form-item label="业务类型" prop="businessType">
+              <el-select v-model="form.businessType" style="width: 100%">
+                <el-option label="合同单" value="contract" />
+                <el-option label="零售单" value="retail" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="状态" prop="status">
               <el-select v-model="form.status" style="width: 100%">
                 <el-option label="待发货" value="pending" />
@@ -134,86 +165,31 @@
 
         <el-divider content-position="left">产品明细</el-divider>
 
-        <div class="items-section" v-if="form.productType === 'mortar'">
-          <el-table :data="form.mortarItems" border size="small">
-            <el-table-column label="产品" width="150">
-              <template #default="{ row, $index }">
-                <el-select v-model="row.productId" placeholder="选择产品" @change="onMortarProductChange($index)" style="width: 100%">
-                  <el-option v-for="p in mortarProducts" :key="p.id" :label="p.name" :value="p.id" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="砂浆标号" width="120">
-              <template #default="{ row }">
-                <el-input v-model="row.mortarGrade" placeholder="如：M5" />
-              </template>
-            </el-table-column>
-            <el-table-column label="数量(吨)" width="130">
-              <template #default="{ row }">
-                <el-input-number v-model="row.quantity" :precision="4" :step="0.1" style="width: 100%" @change="calcMortarItemAmount(row)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="单价" width="120">
-              <template #default="{ row }">
-                <el-input-number v-model="row.price" :min="0" :precision="4" style="width: 100%" @change="calcMortarItemAmount(row)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="金额(元)" width="120">
-              <template #default="{ row }">
-                <span class="amount-text">¥{{ Number(row.amount || 0).toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="散装/袋包" width="100">
-              <template #default="{ row }">
-                <el-select v-model="row.packingType" placeholder="选择" style="width: 100%">
-                  <el-option label="散装" value="bulk" />
-                  <el-option label="袋包" value="bagged" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="车牌号" width="120">
-              <template #default="{ row }">
-                <el-input v-model="row.licensePlate" placeholder="如：沪A12345" />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="60">
-              <template #default="{ $index }">
-                <el-button type="danger" link @click="removeMortarItem($index)">删</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-button type="primary" link class="mt-8" @click="addMortarItem">
-            <el-icon><Plus /></el-icon> 添加砂浆明细
-          </el-button>
-        </div>
-
-        <div class="items-section" v-else-if="form.productType === 'block'">
-          <el-table :data="form.blockItems" border size="small">
+        <!-- 通用明细表格（动态渲染品类专属列） -->
+        <div class="items-section">
+          <el-table :data="form.items" border size="small">
+            <!-- 产品列 -->
             <el-table-column label="产品" width="180">
               <template #default="{ row, $index }">
-                <el-select v-model="row.productId" placeholder="选择产品" @change="onBlockProductChange($index)" style="width: 100%">
-                  <el-option v-for="p in blockProducts" :key="p.id" :label="p.name + (p.spec ? ' ' + p.spec : '')" :value="p.id" />
+                <el-select v-model="row.productId" placeholder="选择产品" @change="onProductChange($index)" style="width: 100%">
+                  <el-option v-for="p in currentProducts" :key="p.id" :label="p.name + (p.spec ? ' ' + p.spec : '')" :value="p.id" />
                 </el-select>
               </template>
             </el-table-column>
-            <el-table-column label="规格型号" width="120">
+            <!-- 主计量列 -->
+            <el-table-column :label="currentCategory?.unit || '报货数量'" width="130">
               <template #default="{ row }">
-                <span>{{ row.spec || '-' }}</span>
+                <el-input-number v-model="row.quantity" :precision="4" :step="0.1" style="width: 100%" :disabled="form.status === 'confirmed'" @change="calcItemAmount(row)" />
               </template>
             </el-table-column>
-            <el-table-column label="实收数量" width="130">
+            <el-table-column :label="'实收数量'" width="130">
               <template #default="{ row }">
-                <el-input-number v-model="row.quantity" :precision="4" :step="1" style="width: 100%" @change="onBlockQuantityChange(row)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="折立方" width="120">
-              <template #default="{ row }">
-                <el-input-number v-model="row.convertedCubic" :precision="4" :step="0.1" style="width: 100%" @change="onBlockCubicChange(row)" />
+                <el-input-number v-model="row.receivedQuantity" :precision="4" :step="0.1" style="width: 100%" :disabled="form.status === 'confirmed'" @change="checkQuantityDiff(row)" />
               </template>
             </el-table-column>
             <el-table-column label="单价" width="120">
               <template #default="{ row }">
-                <el-input-number v-model="row.price" :min="0" :precision="4" style="width: 100%" @change="calcBlockItemAmount(row)" />
+                <el-input-number v-model="row.price" :min="0" :precision="4" style="width: 100%" @change="calcItemAmount(row)" />
               </template>
             </el-table-column>
             <el-table-column label="金额(元)" width="120">
@@ -221,24 +197,27 @@
                 <span class="amount-text">¥{{ Number(row.amount || 0).toFixed(2) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="带去铁架" width="80">
+            <!-- 动态品类专属属性列 -->
+            <el-table-column v-for="field in dynamicFormFields" :key="field.code" :label="field.name" :width="getFieldWidth(field)" :required="field.required">
               <template #default="{ row }">
-                <el-input v-model.number="row.frameTaken" type="number" min="0" style="width: 100%" />
-              </template>
-            </el-table-column>
-            <el-table-column label="带回铁架" width="80">
-              <template #default="{ row }">
-                <el-input v-model.number="row.frameReturned" type="number" min="0" style="width: 100%" />
+                <!-- select 类型 -->
+                <el-select v-if="field.type === 'select'" v-model="row.attributes[field.code]" placeholder="选择" style="width: 100%">
+                  <el-option v-for="opt in field.options" :key="opt.value" :label="opt.label" :value="opt.value" />
+                </el-select>
+                <!-- number 类型 -->
+                <el-input-number v-else-if="field.type === 'number'" v-model="row.attributes[field.code]" :precision="4" :step="0.1" style="width: 100%" />
+                <!-- string/其他 -->
+                <el-input v-else v-model="row.attributes[field.code]" :placeholder="field.name" />
               </template>
             </el-table-column>
             <el-table-column label="操作" width="60">
               <template #default="{ $index }">
-                <el-button type="danger" link @click="removeBlockItem($index)">删</el-button>
+                <el-button type="danger" link @click="removeItem($index)">删</el-button>
               </template>
             </el-table-column>
           </el-table>
-          <el-button type="primary" link class="mt-8" @click="addBlockItem">
-            <el-icon><Plus /></el-icon> 添加蒸压加气混凝土砌块明细
+          <el-button type="primary" link class="mt-8" @click="addItem">
+            <el-icon><Plus /></el-icon> 添加明细
           </el-button>
         </div>
 
@@ -248,10 +227,20 @@
               <span class="total-amount">¥{{ Number(form.totalAmount || 0).toFixed(2) }}</span>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="差异提醒">
+              <span v-if="hasQuantityDiff" class="diff-warning">报货数量与实收数量不一致，请填写差异备注</span>
+              <span v-else class="diff-normal">数量一致</span>
+            </el-form-item>
+          </el-col>
         </el-row>
 
         <el-form-item label="备注" prop="remark">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
+        </el-form-item>
+
+        <el-form-item label="差异备注" prop="diffRemark">
+          <el-input v-model="form.diffRemark" type="textarea" :rows="3" placeholder="当报货数量与实收数量不一致时，请填写差异原因" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -260,6 +249,7 @@
       </template>
     </el-dialog>
 
+    <!-- 回收站对话框 -->
     <el-dialog v-model="recycleBinVisible" title="回收站" width="900px">
       <div class="mb-16">
         <el-button type="warning" :disabled="recycleSelectedRows.length === 0" @click="handleBatchRestore">
@@ -271,10 +261,10 @@
         <el-table-column prop="no" label="送货单号" width="180" />
         <el-table-column prop="supplierName" label="供货单位" min-width="150" />
         <el-table-column prop="customerName" label="项目名称" min-width="150" />
-        <el-table-column prop="productType" label="产品类型" width="100">
+        <el-table-column prop="categoryCode" label="产品品类" width="140">
           <template #default="{ row }">
-            <el-tag :type="row.productType === 'mortar' ? 'success' : 'warning'" size="small">
-              {{ row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块' }}
+            <el-tag :type="getCategoryTagType(row.categoryCode)" size="small">
+              {{ row.categoryName || row.categoryCode }}
             </el-tag>
           </template>
         </el-table-column>
@@ -296,13 +286,13 @@
       <el-pagination class="mt-16" v-model:current-page="recyclePagination.page" v-model:page-size="recyclePagination.pageSize" :total="recyclePagination.total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" @size-change="loadRecycleBinData" @current-change="loadRecycleBinData" />
     </el-dialog>
 
+    <!-- 导入对话框 -->
     <el-dialog v-model="importDialogVisible" title="导入送货单" width="500px">
       <el-form :model="importForm" label-width="100px">
-        <el-form-item label="产品类型" required>
-          <el-radio-group v-model="importForm.productType">
-            <el-radio label="mortar">砂浆</el-radio>
-            <el-radio label="block">蒸压加气混凝土砌块</el-radio>
-          </el-radio-group>
+        <el-form-item label="产品品类" required>
+          <el-select v-model="importForm.categoryCode" placeholder="请选择" style="width: 100%">
+            <el-option v-for="cat in categories" :key="cat.code" :label="cat.name" :value="cat.code" />
+          </el-select>
         </el-form-item>
         <el-form-item label="选择文件" required>
           <el-upload
@@ -327,17 +317,51 @@
         <el-button type="primary" :loading="importLoading" @click="handleImportSubmit">开始导入</el-button>
       </template>
     </el-dialog>
+
+    <!-- 确认签收对话框 -->
+    <el-dialog v-model="confirmDialogVisible" title="确认签收" width="800px">
+      <el-form :model="confirmForm" label-width="100px">
+        <el-divider content-position="left">签收明细</el-divider>
+        <el-table :data="confirmForm.items" border size="small">
+          <el-table-column prop="productName" label="产品" width="180" />
+          <el-table-column label="报货数量" width="130" align="right">
+            <template #default="{ row }">{{ row.quantity }}</template>
+          </el-table-column>
+          <el-table-column label="实收数量" width="130" align="right">
+            <template #default="{ row }">
+              <el-input-number v-model="row.receivedQuantity" :precision="4" :step="0.1" style="width: 100%" />
+            </template>
+          </el-table-column>
+          <el-table-column label="差异" width="100" align="right">
+            <template #default="{ row }">
+              <span :class="{ 'diff-red': row.diff !== 0 }">{{ row.diff > 0 ? '+' : '' }}{{ row.diff }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-form-item label="差异备注" prop="diffRemark" :required="hasConfirmDiff">
+          <el-input v-model="confirmForm.diffRemark" type="textarea" :rows="3" placeholder="当报货数量与实收数量不一致时，请填写差异原因" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="confirmDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleConfirmSubmit">确认签收</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Upload, Search, Download } from '@element-plus/icons-vue'
+import { Plus, Delete, Upload, Search, Download, Refresh } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
-import type { DeliveryOrder, DeliveryOrderMortarItem, DeliveryOrderBlockItem, Customer, Contract, Product } from '@/types'
-import { deliveryApi, customerApi, contractApi, productApi } from '@/api'
+import type { DeliveryOrder, Customer, Contract, Product, ProductCategory } from '@/types'
+import { deliveryApi, customerApi, contractApi, productApi, productCategoryApi } from '@/api'
 
+// ============================================
+// 状态定义
+// ============================================
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const selectedRows = ref<any[]>([])
@@ -351,22 +375,117 @@ const recyclePagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const importDialogVisible = ref(false)
 const importLoading = ref(false)
 const uploadRef = ref()
-const importForm = reactive({
-  productType: 'mortar',
-  file: null as any
+const importForm = reactive({ categoryCode: 'mortar', file: null as any })
+
+const confirmDialogVisible = ref(false)
+const confirmForm = reactive({
+  items: [] as any[],
+  diffRemark: ''
 })
+
 const customers = ref<Customer[]>([])
 const suppliers = ref<Customer[]>([])
 const contracts = ref<Contract[]>([])
-const mortarProducts = ref<Product[]>([])
-const blockProducts = ref<Product[]>([])
-const contractItems = ref<any[]>([])
+const products = ref<Product[]>([])
+const categories = ref<ProductCategory[]>([])
+
 const dialogTitle = computed(() => (form.id ? '编辑送货单' : '新增送货单'))
 
-const onDialogClosed = () => {
-  formRef.value?.resetFields()
+// ============================================
+// 动态列计算
+// ============================================
+const currentCategory = computed(() => categories.value.find(c => c.code === form.categoryCode))
+
+const dynamicColumns = computed(() => {
+  if (!currentCategory.value?.fields) return []
+  return currentCategory.value.fields
+    .filter(f => f.code !== 'remarks')
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+    .map(f => ({
+      code: `attr_${f.code}`,
+      name: f.name,
+      width: f.type === 'select' ? 120 : 100
+    }))
+})
+
+const dynamicFormFields = computed(() => {
+  if (!currentCategory.value?.fields) return []
+  return currentCategory.value.fields
+    .filter(f => f.code !== 'remarks')
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+})
+
+const currentProducts = computed(() => {
+  if (!form.categoryCode) return products.value
+  return products.value.filter((p: any) => p.categoryCode === form.categoryCode)
+})
+
+const getFieldWidth = (field: any) => {
+  if (field.type === 'select') return 120
+  if (field.code === 'licensePlate') return 130
+  return 110
 }
 
+const formatDynamicValue = (row: any, col: any) => {
+  const attrCode = col.code.replace('attr_', '')
+  const attrs = row.items?.[0]?.attributes || {}
+  const val = attrs[attrCode]
+  if (val === null || val === undefined) return '-'
+  // 处理 select 类型显示 label
+  const field = currentCategory.value?.fields?.find((f: any) => f.code === attrCode)
+  if (field?.type === 'select' && field.options) {
+    const opt = field.options.find((o: any) => o.value === val)
+    return opt?.label || val
+  }
+  return String(val)
+}
+
+// ============================================
+// 表单与查询
+// ============================================
+const queryForm = reactive({ no: '', categoryCode: '', status: '' })
+const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
+const formRef = ref()
+
+const defaultItem = (): any => ({
+  productId: undefined,
+  productName: '',
+  productSpec: '',
+  quantity: 0,
+  receivedQuantity: 0,
+  price: 0,
+  amount: 0,
+  attributes: {}
+})
+
+const form = reactive<any>({
+  id: undefined,
+  no: '',
+  categoryCode: 'mortar',
+  businessType: 'contract',
+  contractId: undefined,
+  supplierId: undefined,
+  supplierName: '',
+  customerId: undefined,
+  customerName: '',
+  deliveryDate: '',
+  totalAmount: 0,
+  status: 'pending',
+  remark: '',
+  diffRemark: '',
+  items: [{ ...defaultItem() }]
+})
+
+const rules = {
+  categoryCode: [{ required: true, message: '请选择产品品类', trigger: 'change' }],
+  supplierId: [{ required: true, message: '请选择供货单位', trigger: 'change' }],
+  customerId: [{ required: true, message: '请选择项目', trigger: 'change' }],
+  deliveryDate: [{ required: true, message: '请选择日期', trigger: 'change' }]
+}
+
+// ============================================
+// 工具方法
+// ============================================
 const formatDate = (date: any) => {
   if (!date) return '-'
   const d = new Date(date)
@@ -376,187 +495,116 @@ const formatDate = (date: any) => {
   return `${year}-${month}-${day}`
 }
 
-const queryForm = reactive({ no: '', productType: '', status: '' })
-const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
-const formRef = ref()
-
-const defaultMortarItem: DeliveryOrderMortarItem = {
-  productId: undefined, quantity: 0, price: 0, amount: 0,
-  mortarGrade: '', packingType: 'bulk', licensePlate: ''
-}
-
-const defaultBlockItem: DeliveryOrderBlockItem = {
-  productId: undefined, quantity: 0, convertedCubic: 0, price: 0, amount: 0,
-  frameTaken: 0, frameReturned: 0, remarks: ''
-}
-
-const form = reactive<any>({
-  id: undefined, no: '', productType: 'mortar', contractId: undefined,
-  supplierId: undefined, supplierName: '',
-  customerId: undefined, customerName: '', deliveryDate: '', totalAmount: 0,
-  status: 'pending', remark: '', mortarItems: [], blockItems: [], contractItems: []
-})
-
-const rules = {
-  productType: [{ required: true, message: '请选择产品类型', trigger: 'change' }],
-  supplierId: [{ required: true, message: '请选择供货单位', trigger: 'change' }],
-  customerId: [{ required: true, message: '请选择项目', trigger: 'change' }],
-  deliveryDate: [{ required: true, message: '请选择日期', trigger: 'change' }]
-}
-
-const getStatusType = (status: string): 'primary' | 'success' | 'warning' | 'info' | 'danger' => {
-  const map: Record<string, 'primary' | 'success' | 'warning' | 'info' | 'danger'> = {
+const getStatusType = (status: string): 'success' | 'warning' | 'info' | 'danger' => {
+  const map: Record<string, 'success' | 'warning' | 'info' | 'danger'> = {
     pending: 'warning',
-    delivered: 'primary',
+    delivered: 'info',
     confirmed: 'success'
   }
   return map[status] || 'info'
 }
+
 const getStatusText = (status: string) => ({ pending: '待发货', delivered: '已发货', confirmed: '已确认' }[status] || status)
 
-const calcMortarItemAmount = (item: DeliveryOrderMortarItem) => {
-  item.amount = parseFloat(((item.quantity || 0) * (item.price || 0)).toFixed(2))
+const getCategoryTagType = (code: string): 'success' | 'warning' | 'info' | 'danger' => {
+  const map: Record<string, 'success' | 'warning' | 'info' | 'danger'> = {
+    mortar: 'success',
+    block: 'warning',
+    board: 'info',
+    steel: 'danger'
+  }
+  return map[code] || 'info'
+}
+
+const calcItemAmount = (item: any) => {
+  const qty = item.receivedQuantity || item.quantity || 0
+  const prc = item.price || 0
+  // 砌块用折立方验算
+  if (form.categoryCode === 'block' && item.attributes?.convertedCubic) {
+    item.amount = parseFloat((item.attributes.convertedCubic * prc).toFixed(2))
+  } else {
+    item.amount = parseFloat((qty * prc).toFixed(2))
+  }
   calcTotalAmount()
 }
 
-const calcBlockItemAmount = (item: DeliveryOrderBlockItem) => {
-  item.amount = parseFloat(((item.convertedCubic || 0) * (item.price || 0)).toFixed(2))
-  calcTotalAmount()
+const hasQuantityDiff = computed(() => {
+  return form.items.some((item: any) => {
+    const qty = item.quantity || 0
+    const received = item.receivedQuantity || 0
+    return Math.abs(qty - received) > 0.0001
+  })
+})
+
+const checkQuantityDiff = (row: any) => {
+  calcItemAmount(row)
 }
+
+const hasConfirmDiff = computed(() => {
+  return confirmForm.items.some((item: any) => {
+    const qty = item.quantity || 0
+    const received = item.receivedQuantity || 0
+    return Math.abs(qty - received) > 0.0001
+  })
+})
 
 const calcTotalAmount = () => {
-  const items = form.productType === 'mortar' ? form.mortarItems : form.blockItems
-  form.totalAmount = items.reduce((sum: number, item: any) => sum + (item.amount || 0), 0)
+  form.totalAmount = form.items.reduce((sum: number, item: any) => sum + (item.amount || 0), 0)
 }
 
-const onSupplierChange = (id: number) => {
-  const s = suppliers.value.find(x => x.id === id)
-  if (s) form.supplierName = s.name
+// ============================================
+// 品类切换处理
+// ============================================
+const onCategoryChange = () => {
+  // 切换品类时重置明细，初始化空行
+  form.items = [{ ...defaultItem() }]
+  form.totalAmount = 0
 }
 
-const onCustomerChange = (id: number) => {
-  const c = customers.value.find(x => x.id === id)
-  if (c) form.customerName = c.name
-}
-
-const onProductTypeChange = (val: string) => {
-  if (val === 'block' && form.blockItems.length === 0) {
-    form.blockItems.push({ ...defaultBlockItem, model: '' })
+const onProductChange = (index: number) => {
+  const product = products.value.find(p => p.id === form.items[index].productId)
+  if (product) {
+    form.items[index].price = product.price || 0
+    calcItemAmount(form.items[index])
   }
 }
 
-const onContractChange = async (contractId: number) => {
-  contractItems.value = []
-  if (!contractId) return
-
-  try {
-    const res = await contractApi.getById(contractId)
-    contractItems.value = res.data.items || []
-
-    if (form.productType === 'mortar' && form.mortarItems.length > 0) {
-      form.mortarItems[0].price = 0
-      form.mortarItems[0].mortarGrade = ''
-    } else if (form.productType === 'block' && form.blockItems.length > 0) {
-      form.blockItems[0].price = 0
-    }
-  } catch {
-    contractItems.value = []
-  }
+// ============================================
+// 明细行操作
+// ============================================
+const addItem = () => {
+  form.items.push({ ...defaultItem() })
 }
 
-const onMortarProductChange = (index: number) => {
-  const contractItem = contractItems.value.find((item: any) => item.productId === form.mortarItems[index].productId)
-  if (contractItem) {
-    form.mortarItems[index].price = parseFloat(contractItem.price) || 0
-    form.mortarItems[index].mortarGrade = contractItem.spec || ''
-    calcMortarItemAmount(form.mortarItems[index])
-  } else {
-    const product = mortarProducts.value.find(p => p.id === form.mortarItems[index].productId)
-    if (product) {
-      form.mortarItems[index].price = product.price || 0
-      calcMortarItemAmount(form.mortarItems[index])
-    }
-  }
-}
-
-const onBlockProductChange = (index: number) => {
-  const contractItem = contractItems.value.find((item: any) => item.productId === form.blockItems[index].productId)
-  if (contractItem) {
-    form.blockItems[index].price = parseFloat(contractItem.price) || 0
-    form.blockItems[index].spec = contractItem.spec || ''
-    calcBlockItemAmount(form.blockItems[index])
-  } else {
-    const product = blockProducts.value.find(p => p.id === form.blockItems[index].productId)
-    if (product) {
-      form.blockItems[index].price = product.price || 0
-      form.blockItems[index].spec = product.spec || ''
-      calcBlockItemAmount(form.blockItems[index])
-    }
-  }
-}
-
-const onBlockQuantityChange = (row: any) => {
-  if (row.spec) {
-    const dims = parseBlockSpec(row.spec)
-    if (dims) {
-      row.convertedCubic = parseFloat((dims.l * dims.w * dims.h * row.quantity).toFixed(4))
-    }
-  }
-  calcBlockItemAmount(row)
-}
-
-const onBlockCubicChange = (row: any) => {
-  if (row.spec) {
-    const dims = parseBlockSpec(row.spec)
-    if (dims && dims.l * dims.w * dims.h !== 0) {
-      row.quantity = parseFloat((row.convertedCubic / (dims.l * dims.w * dims.h)).toFixed(4))
-    }
-  }
-  calcBlockItemAmount(row)
-}
-
-const parseBlockSpec = (spec: string): { l: number; w: number; h: number } | null => {
-  const match = spec.match(/(\d+)\*(\d+)\*(\d+)/)
-  if (match) {
-    return {
-      l: parseInt(match[1]) / 1000,
-      w: parseInt(match[2]) / 1000,
-      h: parseInt(match[3]) / 1000
-    }
-  }
-  return null
-}
-
-const addMortarItem = () => {
-  form.mortarItems.push({ ...defaultMortarItem })
-}
-
-const removeMortarItem = (index: number) => {
-  form.mortarItems.splice(index, 1)
+const removeItem = (index: number) => {
+  form.items.splice(index, 1)
   calcTotalAmount()
 }
 
-const addBlockItem = () => {
-  form.blockItems.push({ ...defaultBlockItem })
-}
-
-const removeBlockItem = (index: number) => {
-  form.blockItems.splice(index, 1)
-  calcTotalAmount()
-}
-
+// ============================================
+// 加载数据
+// ============================================
 const loadData = async () => {
   loading.value = true
   try {
     const params = { ...queryForm, page: pagination.page, pageSize: pagination.pageSize }
     const res = await deliveryApi.list(params)
-    tableData.value = res.data.list
-    pagination.total = res.data.total
+    tableData.value = res.data.list || []
+    pagination.total = res.data.total || 0
   } catch {
     tableData.value = []
     pagination.total = 0
   } finally {
     loading.value = false
+  }
+}
+
+const loadCategories = async () => {
+  try {
+    const res = await productCategoryApi.list()
+    categories.value = res.data || []
+  } catch {
+    categories.value = []
   }
 }
 
@@ -586,24 +634,41 @@ const loadContracts = async () => {
 const loadProducts = async () => {
   try {
     const res = await productApi.list({ page: 1, pageSize: 100 })
-    const allProducts = res.data.list
-    mortarProducts.value = allProducts.filter((p: Product) => p.pricingType === 'info_price')
-    blockProducts.value = allProducts.filter((p: Product) => p.pricingType === 'fixed_price')
+    products.value = res.data.list || []
   } catch {
-    mortarProducts.value = []
-    blockProducts.value = []
+    products.value = []
   }
 }
 
-const handleQuery = () => { pagination.page = 1; loadData() }
+// ============================================
+// 事件处理
+// ============================================
+const onDialogClosed = () => {
+  formRef.value?.resetFields()
+}
 
+const handleQuery = () => {
+  pagination.page = 1
+  loadData()
+}
 
 const handleAdd = () => {
   Object.assign(form, {
-    id: undefined, no: '', productType: 'mortar', contractId: undefined,
-    supplierId: undefined, supplierName: '',
-    customerId: undefined, customerName: '', deliveryDate: '', totalAmount: 0,
-    status: 'pending', remark: '', mortarItems: [{ ...defaultMortarItem }], blockItems: [], contractItems: []
+    id: undefined,
+    no: '',
+    categoryCode: 'mortar',
+    businessType: 'contract',
+    contractId: undefined,
+    supplierId: undefined,
+    supplierName: '',
+    customerId: undefined,
+    customerName: '',
+    deliveryDate: '',
+    totalAmount: 0,
+    status: 'pending',
+    remark: '',
+    diffRemark: '',
+    items: [{ ...defaultItem() }]
   })
   dialogVisible.value = true
 }
@@ -612,18 +677,25 @@ const handleEdit = async (row: any) => {
   try {
     const res = await deliveryApi.get(row.id)
     const data = res.data
-    if (data.productType === 'mortar') {
-      const items = (data.items || []).map((item: any) => ({ ...item, spec: item.product?.spec || '' }))
-      Object.assign(form, { ...data, mortarItems: items, blockItems: [] })
-    } else {
-      const items = (data.items || []).map((item: any) => ({ ...item, spec: item.product?.spec || '' }))
-      Object.assign(form, { ...data, blockItems: items, mortarItems: [] })
-    }
-
+    // 转换 items 到新格式
+    const items = (data.items || []).map((item: any) => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.productName,
+      productSpec: item.productSpec,
+      quantity: item.quantity,
+      receivedQuantity: item.receivedQuantity || item.quantity,
+      price: item.price,
+      amount: item.amount,
+      attributes: item.attributes || {}
+    }))
+    Object.assign(form, {
+      ...data,
+      items: items.length ? items : [{ ...defaultItem() }]
+    })
     if (form.contractId) {
       await onContractChange(form.contractId)
     }
-
     dialogVisible.value = true
   } catch {
     ElMessage.error('获取数据失败')
@@ -634,16 +706,73 @@ const handleView = async (row: any) => {
   try {
     const res = await deliveryApi.get(row.id)
     const data = res.data
-    if (data.productType === 'mortar') {
-      const items = (data.items || []).map((item: any) => ({ ...item, spec: item.product?.spec || '' }))
-      Object.assign(form, { ...data, mortarItems: items, blockItems: [] })
-    } else {
-      const items = (data.items || []).map((item: any) => ({ ...item, spec: item.product?.spec || '' }))
-      Object.assign(form, { ...data, blockItems: items, mortarItems: [] })
-    }
+    const items = (data.items || []).map((item: any) => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.productName,
+      productSpec: item.productSpec,
+      quantity: item.quantity,
+      receivedQuantity: item.receivedQuantity || item.quantity,
+      price: item.price,
+      amount: item.amount,
+      attributes: item.attributes || {}
+    }))
+    Object.assign(form, { ...data, items })
     dialogVisible.value = true
   } catch {
     ElMessage.error('获取数据失败')
+  }
+}
+
+const handleConfirm = async (row: any) => {
+  try {
+    const res = await deliveryApi.get(row.id)
+    const data = res.data
+    confirmForm.items = (data.items || []).map((item: any) => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+      receivedQuantity: item.receivedQuantity || item.quantity,
+      diff: 0
+    }))
+    confirmForm.diffRemark = data.diffRemark || ''
+    confirmDialogVisible.value = true
+  } catch {
+    ElMessage.error('获取数据失败')
+  }
+}
+
+const handleConfirmSubmit = async () => {
+  confirmForm.items.forEach(item => {
+    item.diff = (item.receivedQuantity || 0) - (item.quantity || 0)
+  })
+
+  if (hasConfirmDiff.value && !confirmForm.diffRemark) {
+    ElMessage.error('报货数量与实收数量不一致，请填写差异备注')
+    return
+  }
+
+  await ElMessageBox.confirm('确认签收后单据将不可修改，确定继续吗？', '提示', { type: 'warning' })
+
+  try {
+    const items = confirmForm.items.map(item => ({
+      id: item.id,
+      receivedQuantity: item.receivedQuantity,
+      quantity: item.quantity || 0,
+      price: item.price || 0,
+      amount: item.amount || 0
+    }))
+    await deliveryApi.update(form.id, {
+      status: 'confirmed',
+      items: items as any,
+      diffRemark: confirmForm.diffRemark
+    })
+    ElMessage.success('签收成功')
+    confirmDialogVisible.value = false
+    loadData()
+  } catch {
+    ElMessage.error('签收失败')
   }
 }
 
@@ -732,8 +861,11 @@ const handleBatchRestore = async () => {
   }
 }
 
+// ============================================
+// 导入功能
+// ============================================
 const handleImport = () => {
-  importForm.productType = 'mortar'
+  importForm.categoryCode = 'mortar'
   importForm.file = null
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
@@ -746,27 +878,29 @@ const handleFileChange = (file: any) => {
 }
 
 const downloadTemplate = () => {
-  const templateData = importForm.productType === 'mortar'
-    ? getMortarTemplate()
-    : getBlockTemplate()
-  const ws = XLSX.utils.aoa_to_sheet(templateData)
+  const category = categories.value.find(c => c.code === importForm.categoryCode)
+  const fields = category?.fields || []
+
+  // 构建表头
+  const headers = ['送货单号', '供货单位', '项目名称', '送货日期', '产品名称', '数量', '单价', '金额']
+  fields.forEach((f: any) => headers.push(f.name))
+
+  // 构建示例行
+  const exampleRow = ['SHD-001', '厂家A', '项目C', '2026-05-01', category?.name || '产品', '100', '100', '10000']
+  fields.forEach((f: any) => {
+    if (f.type === 'select' && f.options?.length) {
+      exampleRow.push(f.options[0].value)
+    } else if (f.type === 'number') {
+      exampleRow.push('0')
+    } else {
+      exampleRow.push('')
+    }
+  })
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow])
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '送货单')
-  XLSX.writeFile(wb, `送货单导入模板_${importForm.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块'}.xlsx`)
-}
-
-const getMortarTemplate = (): string[][] => {
-  return [
-    ['送货单号', '供货单位', '项目名称', '送货日期', '产品名称', '砂浆标号', '数量', '单价', '金额', '散装/袋包', '车牌号', '备注'],
-    ['SHD-001', '厂家A', '项目C', '2026-05-01', '砂浆', 'M5', '10', '100', '1000', '散装', '沪A12345', '']
-  ]
-}
-
-const getBlockTemplate = (): string[][] => {
-  return [
-    ['送货单号', '供货单位', '项目名称', '送货日期', '产品名称', '规格型号', '实收数量', '折立方', '单价', '金额', '铁架数量', '铁架返还', '备注'],
-    ['SHD-001', '厂家A', '项目C', '2026-05-01', '蒸压加气混凝土砌块', '600*200*200', '100', '80', '120', '9600', '10', '5', '']
-  ]
+  XLSX.writeFile(wb, `送货单导入模板_${category?.name || '通用'}.xlsx`)
 }
 
 const handleImportSubmit = async () => {
@@ -792,43 +926,20 @@ const handleImportSubmit = async () => {
           return
         }
 
-        const headers = jsonData[0].map((h: any) => {
-          const headerText = typeof h === 'string' ? h.trim() : String(h).trim()
-          return headerText.replace(/[\r\n]/g, '').replace(/\s+/g, '')
-        })
-
-        const excelSerialToDate = (serial: number): string => {
-          const excelEpoch = new Date(1899, 11, 30)
-          const date = new Date(excelEpoch.getTime() + serial * 24 * 60 * 60 * 1000)
-          const year = date.getFullYear()
-          const month = String(date.getMonth() + 1).padStart(2, '0')
-          const day = String(date.getDate()).padStart(2, '0')
-          return `${year}-${month}-${day}`
-        }
+        const headers = jsonData[0].map((h: any) => String(h).trim().replace(/[\r\n\s]/g, ''))
 
         const rows = jsonData.slice(1).map((row: any[]) => {
           const obj: any = {}
           headers.forEach((header: string, index: number) => {
             let value = row[index]
-            if (value === null || value === undefined) {
-              value = ''
-            } else if (typeof value === 'number' && header === '送货日期') {
-              value = excelSerialToDate(value)
-            } else if (header === '送货日期' && typeof value === 'string') {
-              const date = new Date(value)
-              if (!isNaN(date.getTime())) {
-                value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-              }
-            } else {
-              value = value.toString().trim()
-            }
+            if (value === null || value === undefined) value = ''
             obj[header] = value
           })
           return obj
         }).filter((row: any) => row['送货单号'] && row['送货单号'].trim() !== '')
 
         const result = await deliveryApi.importDeliveryOrders({
-          productType: importForm.productType,
+          categoryCode: importForm.categoryCode,
           rows
         })
 
@@ -838,14 +949,6 @@ const handleImportSubmit = async () => {
             `第${err.row}行: ${err.message}`
           ).join('\n')
           ElMessage.error(errorMsg + errorDetails + (result.data.errors.length > 10 ? '\n...(更多错误已省略)' : ''))
-
-          const errorBlob = new Blob([JSON.stringify(result.data.errors, null, 2)], { type: 'application/json' })
-          const url = URL.createObjectURL(errorBlob)
-          const link = document.createElement('a')
-          link.href = url
-          link.download = `导入错误报告_${Date.now()}.json`
-          link.click()
-          URL.revokeObjectURL(url)
         } else {
           ElMessage.success(`导入成功：${result.data.success}条记录`)
           importDialogVisible.value = false
@@ -864,27 +967,43 @@ const handleImportSubmit = async () => {
   }
 }
 
+// ============================================
+// 提交表单
+// ============================================
 const handleSubmit = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
-  const items = form.productType === 'mortar' ? form.mortarItems : form.blockItems
-  if (!items || items.length === 0) {
+  if (!form.items || form.items.length === 0) {
     ElMessage.error('请添加产品明细')
+    return
+  }
+
+  if (hasQuantityDiff.value && !form.diffRemark) {
+    ElMessage.error('报货数量与实收数量不一致，请填写差异备注')
     return
   }
 
   calcTotalAmount()
 
-  const submitData: any = {
-    productType: form.productType,
+  const submitData = {
+    categoryCode: form.categoryCode,
+    businessType: form.businessType,
     contractId: form.contractId,
     supplierId: form.supplierId,
     customerId: form.customerId,
     deliveryDate: form.deliveryDate,
     status: form.status,
     remark: form.remark,
-    items
+    diffRemark: form.diffRemark,
+    items: form.items.map((item: any) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      receivedQuantity: item.receivedQuantity || item.quantity,
+      price: item.price,
+      amount: item.amount,
+      attributes: item.attributes
+    }))
   }
 
   try {
@@ -901,20 +1020,42 @@ const handleSubmit = async () => {
   }
 }
 
-onMounted(() => {
-  loadData()
-  loadCustomers()
-  loadContracts()
-  loadProducts()
-})
+// ============================================
+// 辅助方法
+// ============================================
+const onSupplierChange = (id: number) => {
+  const s = suppliers.value.find(x => x.id === id)
+  if (s) form.supplierName = s.name
+}
 
+const onCustomerChange = (id: number) => {
+  const c = customers.value.find(x => x.id === id)
+  if (c) form.customerName = c.name
+}
+
+const onContractChange = async (contractId: number) => {
+  if (!contractId) {
+    form.contractItems = []
+    return
+  }
+  try {
+    const res = await contractApi.get(contractId)
+    form.contractItems = res.data.items || []
+  } catch {
+    form.contractItems = []
+  }
+}
+
+// ============================================
+// 导出
+// ============================================
 const handleExport = () => {
-  const headers = ['送货单号', '供货单位', '项目名称', '产品类型', '送货日期', '总金额', '状态']
+  const headers = ['送货单号', '供货单位', '项目名称', '产品品类', '送货日期', '总金额', '状态']
   const data = tableData.value.map(row => [
     row.no,
     row.supplierName,
     row.customerName,
-    row.productType === 'mortar' ? '砂浆' : '蒸压加气混凝土砌块',
+    row.categoryName || row.categoryCode,
     formatDate(row.deliveryDate),
     row.totalAmount,
     getStatusText(row.status)
@@ -925,8 +1066,17 @@ const handleExport = () => {
   XLSX.writeFile(wb, `送货单_${new Date().toISOString().split('T')[0]}.xlsx`)
 }
 
-onBeforeUnmount(() => {
-  dialogVisible.value = false
+// ============================================
+// 初始化
+// ============================================
+onMounted(async () => {
+  await loadCategories()
+  await Promise.all([
+    loadData(),
+    loadCustomers(),
+    loadContracts(),
+    loadProducts()
+  ])
 })
 </script>
 
@@ -934,6 +1084,9 @@ onBeforeUnmount(() => {
 .items-section { width: 100%; }
 .amount-text { color: #409eff; font-weight: 500; }
 .total-amount { font-size: 18px; color: #f56c6c; font-weight: bold; }
+.diff-warning { color: #f56c6c; font-weight: 500; }
+.diff-normal { color: #67c23a; }
+.diff-red { color: #f56c6c; font-weight: 500; }
 
 .page-container {
   background: #fff;
@@ -954,43 +1107,33 @@ onBeforeUnmount(() => {
 .search-group {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 8px;
 }
 
 .search-input {
-  width: 350px;
-  height: 36px;
-  border-radius: 4px 0 0 4px;
-  border-right: none;
+  width: 250px;
   :deep(.el-input__wrapper) {
-    border-radius: 4px 0 0 4px;
-    border-right: none;
+    border-radius: 4px;
     box-shadow: none;
   }
 }
 
-.search-btn {
+.search-btn, .export-btn {
   height: 36px;
-  border-radius: 0 4px 4px 0;
   padding: 0 20px;
   font-weight: 500;
-  background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
   border: none;
-  :hover {
-    background: linear-gradient(135deg, #357abd 0%, #2d6bb3 100%);
-  }
+  border-radius: 4px;
+}
+
+.search-btn {
+  background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
+  color: #fff;
 }
 
 .export-btn {
-  height: 36px;
-  padding: 0 20px;
-  font-weight: 500;
-  background: linear-gradient(135deg, #4a90d9 0%, #357abd 100%);
-  border: none;
-  border-radius: 4px;
-  :hover {
-    background: linear-gradient(135deg, #357abd 0%, #2d6bb3 100%);
-  }
+  background: linear-gradient(135deg, #67c23a 0%, #5daf34 100%);
+  color: #fff;
 }
 
 .flex-between {
@@ -999,23 +1142,7 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.mb-16 {
-  margin-bottom: 16px;
-}
-
-:deep(.el-table) {
-  --el-table-border-color: #e8e8e8;
-  --el-table-row-hover-bg-color: #fafafa;
-}
-
-:deep(.el-table th) {
-  background-color: #fafafa;
-  font-weight: 600;
-  color: #333;
-  border-bottom: 2px solid #e8e8e8;
-}
-
-:deep(.el-table td) {
-  border-bottom: 1px solid #f0f0f0;
-}
+.mb-16 { margin-bottom: 16px; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
 </style>

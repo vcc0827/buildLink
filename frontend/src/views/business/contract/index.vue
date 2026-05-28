@@ -45,6 +45,19 @@
       <el-table-column prop="name" label="合同名称" min-width="180" />
       <el-table-column prop="companyName" label="签约方" width="180" />
       <el-table-column prop="projectName" label="项目名称" width="180" />
+      <el-table-column prop="cycleType" label="对账周期" width="100">
+        <template #default="{ row }">
+          <el-tag :type="row.cycleType === 'monthly' ? 'primary' : row.cycleType === 'quarterly' ? 'warning' : 'success'" size="small">
+            {{ row.cycleType === 'monthly' ? '月度' : row.cycleType === 'quarterly' ? '季度' : '年度' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="discountRate" label="下浮比例" width="100">
+        <template #default="{ row }">{{ row.discountRate ? row.discountRate + '%' : '-' }}</template>
+      </el-table-column>
+      <el-table-column prop="settlementMethod" label="结算方式" width="120">
+        <template #default="{ row }">{{ row.settlementMethod === 'transfer' ? '转账' : row.settlementMethod === 'cash' ? '现金' : row.settlementMethod === 'acceptance' ? '承兑' : '-' }}</template>
+      </el-table-column>
       <el-table-column prop="itemCount" label="产品数" width="80">
         <template #default="{ row }"> {{ row.itemCount || 0 }}种 </template>
       </el-table-column>
@@ -111,6 +124,32 @@
         <el-form-item label="项目名称" prop="projectName">
           <el-input v-model="form.projectName" placeholder="请输入项目名称" />
         </el-form-item>
+
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="对账周期" prop="cycleType">
+              <el-select v-model="form.cycleType" placeholder="请选择">
+                <el-option label="月度" value="monthly" />
+                <el-option label="季度" value="quarterly" />
+                <el-option label="年度" value="yearly" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="下浮比例(%)" prop="discountRate">
+              <el-input-number v-model="form.discountRate" :min="0" :max="100" :precision="2" placeholder="请输入" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="结算方式" prop="settlementMethod">
+              <el-select v-model="form.settlementMethod" placeholder="请选择">
+                <el-option label="转账" value="transfer" />
+                <el-option label="现金" value="cash" />
+                <el-option label="承兑" value="acceptance" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
 
         <el-divider content-position="left">产品明细</el-divider>
 
@@ -214,6 +253,9 @@ const form = reactive<any>({
   name: '',
   reconciliationUnitId: undefined,
   projectName: '',
+  cycleType: 'monthly',
+  discountRate: 0,
+  settlementMethod: 'transfer',
   signedDate: '',
   status: 'draft',
   remark: '',
@@ -318,6 +360,9 @@ const handleAdd = async () => {
   form.name = ''
   form.reconciliationUnitId = undefined
   form.projectName = ''
+  form.cycleType = 'monthly'
+  form.discountRate = 0
+  form.settlementMethod = 'transfer'
   form.signedDate = ''
   form.status = 'draft'
   form.remark = ''
@@ -330,7 +375,7 @@ const viewMode = ref(false)
 
 const handleEdit = async (row: Contract) => {
   try {
-    const res = await contractApi.getById(row.id)
+    const res = await contractApi.get(row.id)
     const data = res.data
     Object.assign(form, data)
     viewMode.value = false
@@ -342,7 +387,7 @@ const handleEdit = async (row: Contract) => {
 
 const handleView = async (row: Contract) => {
   try {
-    const res = await contractApi.getById(row.id)
+    const res = await contractApi.get(row.id)
     const data = res.data
     Object.assign(form, data)
     viewMode.value = true

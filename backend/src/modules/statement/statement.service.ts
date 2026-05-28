@@ -45,13 +45,18 @@ export class StatementService {
     return { ...statement, customerId: statement.customer?.id, customerName: statement.customer?.name };
   }
 
-  async generate(params: { type: string; customerId: number; period: string }) {
-    const { type, customerId, period } = params;
+  async generate(params: { type: string; customerId: number; period: string; categoryCode?: string }) {
+    const { type, customerId, period, categoryCode } = params;
     const no = `DZD-${type === 'upstream' ? 'UP' : 'DN'}-${period.replace('-', '')}-${Date.now().toString().slice(-4)}`;
 
+    const where: any = { customerId, status: 'delivered' };
+    if (categoryCode) {
+      where.categoryCode = categoryCode;
+    }
+
     const deliveries = await this.prisma.deliveryOrder.findMany({
-      where: { productType: type === 'upstream' ? 'mortar' : 'block', customerId, status: 'delivered' },
-      include: { mortarItems: true, blockItems: true },
+      where,
+      include: { items: true },
     });
 
     const totalAmount = deliveries.reduce((sum: number, d: any) => sum + Number(d.totalAmount), 0);

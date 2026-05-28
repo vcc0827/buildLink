@@ -59,6 +59,25 @@ async function getManufacturerId(shortName: string): Promise<number | null> {
   return manufacturer?.id || null;
 }
 
+async function getProductId(productName: string): Promise<number | null> {
+  const product = await prisma.product.findFirst({
+    where: {
+      name: {
+        contains: productName,
+      },
+    },
+    select: { id: true, name: true },
+  });
+
+  if (!product) {
+    console.warn(`❌ 数据库中未找到产品: ${productName}`);
+  } else {
+    console.log(`✅ 找到产品: ${productName} → ${product.name} (ID: ${product.id})`);
+  }
+
+  return product?.id || null;
+}
+
 async function main() {
   console.log('🚀 开始导入2026年4月份库存数据...\n');
 

@@ -18,7 +18,7 @@ export class StatementController {
   }
 
   @Post('generate')
-  async generate(@Body() params: { type: string; customerId: number; period: string }) {
+  async generate(@Body() params: { type: string; customerId: number; period: string; categoryCode?: string }) {
     return this.statementService.generate(params);
   }
 
